@@ -1,12 +1,15 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
 
-export async function PUT(
-  request: Request,
-  { params }: { params: { id: string } }
-) {
+interface Params {
+  params: {
+    id: string;
+  };
+}
+
+export async function PUT(request: NextRequest, context: Params) {
   try {
-    const id = params?.id;
+    const id = context.params.id;
 
     if (!id) {
       return NextResponse.json(
