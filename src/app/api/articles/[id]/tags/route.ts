@@ -4,9 +4,9 @@ import { supabase } from '@/lib/supabase';
 // 태그 추가
 export async function POST(
   request: Request,
-  { params }: { params: { id: string } }
+  { params }: any
 ) {
-  const id = params.id;
+  const { id } = params;
 
   if (!id) {
     return NextResponse.json(
