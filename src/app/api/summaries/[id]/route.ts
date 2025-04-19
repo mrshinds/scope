@@ -5,16 +5,16 @@ export async function PUT(
   request: Request,
   { params }: { params: { id: string } }
 ) {
-  const id = params.id;
-
-  if (!id) {
-    return NextResponse.json(
-      { error: 'ID가 필요합니다' },
-      { status: 400 }
-    );
-  }
-
   try {
+    const id = params?.id;
+
+    if (!id) {
+      return NextResponse.json(
+        { error: 'ID가 필요합니다' },
+        { status: 400 }
+      );
+    }
+
     // 세션 확인
     const { data: sessionData } = await supabase.auth.getSession();
     

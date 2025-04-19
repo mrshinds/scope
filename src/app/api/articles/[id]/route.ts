@@ -5,17 +5,16 @@ export async function GET(
   request: Request,
   { params }: { params: { id: string } }
 ) {
-  // Next.js의 params를 동기적으로 직접 참조하지 말고 비동기적으로 처리하는 방법
-  const id = params?.id;
-
-  if (!id) {
-    return NextResponse.json(
-      { error: 'ID가 필요합니다' },
-      { status: 400 }
-    );
-  }
-
   try {
+    const id = params?.id;
+
+    if (!id) {
+      return NextResponse.json(
+        { error: 'ID가 필요합니다' },
+        { status: 400 }
+      );
+    }
+
     // 개발 환경에서 샘플 데이터를 반환하여 DB 오류 방지
     if (process.env.NODE_ENV === 'development' && (id.startsWith('sample-') || id.startsWith('temp-'))) {
       return NextResponse.json({
