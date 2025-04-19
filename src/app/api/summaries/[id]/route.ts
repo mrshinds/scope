@@ -1,13 +1,13 @@
 import { NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
 
-// 라우트 핸들러 (PUT 요청)
+// PUT 라우트 핸들러 - params.id로 동적 경로 세그먼트 접근
 export async function PUT(
   request: Request,
-  { params }: { params: { id: string } }
+  context: { params: { id: string } }
 ) {
   try {
-    const id = params.id;
+    const { id } = context.params;
 
     if (!id) {
       return NextResponse.json(
