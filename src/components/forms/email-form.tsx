@@ -2,24 +2,25 @@
 
 import { FormEvent, useState } from "react"
 import { useRouter } from "next/navigation"
-
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { isValidEmail } from "@/lib/utils"
-import { sendVerificationCode } from "@/lib/auth"
+import { Label } from "@/components/ui/label"
+import { supabase } from "@/lib/supabase"
+import { Alert, AlertDescription } from "@/components/ui/alert"
+import { Loader2 } from "lucide-react"
 
 export function EmailForm() {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  const [showCodePreview, setShowCodePreview] = useState(false);
-  const [verificationCode, setVerificationCode] = useState("");
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setError("");
-    setShowCodePreview(false);
+    setSuccess("");
 
     if (!email) {
       setError("이메일을 입력해주세요.");
@@ -31,77 +32,103 @@ export function EmailForm() {
       return;
     }
 
-    if (!email.endsWith("@shinhan.com")) {
-      setError("신한은행 이메일(@shinhan.com)만 사용 가능합니다.");
-      return;
-    }
-
     setIsLoading(true);
 
     try {
-      const success = await sendVerificationCode(email);
+      // Supabase Auth를 이용한 이메일 인증 코드 발송
+      const { data, error: authError } = await supabase.auth.signInWithOtp({
+        email,
+        options: {
+          emailRedirectTo: `${window.location.origin}/verify`,
+        },
+      });
 
-      if (success) {
-        // 이메일 주소를 세션에 저장 (실제 구현에서는 세션/쿠키 사용)
-        sessionStorage.setItem("verifyEmail", email);
-        
-        // 개발 모드에서 인증 코드 표시
-        if (typeof window !== 'undefined') {
-          const code = localStorage.getItem('lastVerificationCode');
-          if (code) {
-            setVerificationCode(code);
-            setShowCodePreview(true);
-          } else {
-            router.push("/verify");
-          }
-        } else {
-          router.push("/verify");
-        }
-      } else {
-        setError("인증 코드 발송에 실패했습니다. 다시 시도해주세요.");
+      if (authError) {
+        setError(`인증 코드 발송 실패: ${authError.message}`);
+        console.error("인증 코드 발송 오류:", authError);
+        return;
       }
+
+      // 인증 코드 발송 성공
+      setSuccess("인증 코드가 이메일로 발송되었습니다. 이메일을 확인해주세요.");
+      
+      // 이메일 세션 저장
+      sessionStorage.setItem("pendingAuthEmail", email);
+      
+      // 인증 코드 확인 페이지로 이동
+      setTimeout(() => {
+        router.push("/verify");
+      }, 1500);
     } catch (error) {
-      setError("오류가 발생했습니다. 다시 시도해주세요.");
-      console.error(error);
+      console.error("이메일 인증 처리 오류:", error);
+      setError("인증 코드 발송 중 오류가 발생했습니다. 다시 시도해주세요.");
     } finally {
       setIsLoading(false);
     }
   }
 
-  function handleContinue() {
-    router.push("/verify");
-  }
+  // 개발 환경에서 테스트 인증 처리
+  const handleDevAuth = async () => {
+    if (process.env.NODE_ENV === 'production') return;
+    
+    setIsLoading(true);
+    try {
+      // 개발 환경에서는 인증을 건너뛰고 테스트 코드 생성
+      sessionStorage.setItem("pendingAuthEmail", "test@example.com");
+      sessionStorage.setItem("verificationCode", "123456");
+      router.push("/verify");
+    } catch (error) {
+      console.error("개발 환경 인증 오류:", error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4 w-full">
       <div className="space-y-2">
+        <Label htmlFor="email">이메일</Label>
         <Input
           id="email"
-          placeholder="이메일 입력 (@shinhan.com)"
+          placeholder="이메일 입력"
           type="email"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           disabled={isLoading}
         />
-        {error && <p className="text-sm font-medium text-destructive">{error}</p>}
       </div>
-      <Button type="submit" className="w-full" disabled={isLoading}>
-        {isLoading ? "처리 중..." : "인증 코드 받기"}
-      </Button>
       
-      {showCodePreview && (
-        <div className="mt-4 p-4 bg-muted rounded-md">
-          <p className="text-sm font-medium mb-2">개발 모드 - 인증 코드 미리보기:</p>
-          <div className="text-lg font-bold mb-2 text-center bg-background p-2 rounded">{verificationCode}</div>
-          <Button 
-            className="w-full mt-2" 
-            variant="secondary"
-            type="button"
-            onClick={handleContinue}
-          >
-            다음으로 계속
-          </Button>
-        </div>
+      {error && (
+        <Alert variant="destructive">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
+
+      {success && (
+        <Alert className="bg-green-50 text-green-800 border-green-200">
+          <AlertDescription>{success}</AlertDescription>
+        </Alert>
+      )}
+      
+      <Button type="submit" className="w-full" disabled={isLoading}>
+        {isLoading ? (
+          <>
+            <Loader2 className="mr-2 h-4 w-4 animate-spin" /> 인증 코드 발송 중...
+          </>
+        ) : (
+          "인증 코드 발송"
+        )}
+      </Button>
+
+      {process.env.NODE_ENV !== 'production' && (
+        <Button 
+          type="button" 
+          variant="outline" 
+          className="w-full mt-2" 
+          onClick={handleDevAuth}
+        >
+          개발 환경 테스트 인증
+        </Button>
       )}
     </form>
   )

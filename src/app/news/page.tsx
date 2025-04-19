@@ -9,7 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { BookmarkIcon, Search, ExternalLink, Filter } from 'lucide-react';
+import { BookmarkIcon, Search, ExternalLink, Filter, RefreshCw } from 'lucide-react';
 import { DashboardLayout } from '@/components/layout/dashboard-layout';
 import { NewsItem } from '@/lib/types';
 import { Separator } from '@/components/ui/separator';
@@ -50,6 +50,32 @@ interface NewsItemCardProps {
 
 // 뉴스 카드 아이템 컴포넌트
 function NewsItemCard({ item, onToggleScrap }: NewsItemCardProps) {
+  // URL 유효성 검사 및 원문 열기 함수
+  const handleViewOriginal = (url: string) => {
+    if (url && typeof url === 'string') {
+      try {
+        // URL 형식 확인 및 보정
+        if (!url.startsWith('http://') && !url.startsWith('https://')) {
+          url = 'https://' + url;
+        }
+        
+        // URL 유효성 검사
+        new URL(url);
+        
+        // 콘솔에 URL 기록 (디버깅용)
+        console.log('열려는 URL:', url);
+        
+        // 새 탭에서 URL 열기
+        window.open(url, '_blank', 'noopener,noreferrer');
+      } catch (error) {
+        console.error('유효하지 않은 URL:', url, error);
+        alert('유효하지 않은 URL입니다: ' + url);
+      }
+    } else {
+      alert('원문 링크가 없습니다.');
+    }
+  };
+
   return (
     <Card className="h-full flex flex-col">
       <CardHeader className="pb-2">
@@ -100,14 +126,7 @@ function NewsItemCard({ item, onToggleScrap }: NewsItemCardProps) {
           <Button 
             variant="ghost" 
             size="icon" 
-            onClick={() => {
-              const url = item.url;
-              if (url && url.startsWith('http')) {
-                window.open(url, '_blank', 'noopener,noreferrer');
-              } else {
-                alert('유효한 URL이 없습니다.');
-              }
-            }}
+            onClick={() => handleViewOriginal(item.url)}
           >
             <ExternalLink className="h-5 w-5" />
           </Button>
@@ -140,48 +159,65 @@ export default function NewsPage() {
   };
 
   // 뉴스 데이터 가져오기
-  useEffect(() => {
-    const fetchNewsData = async () => {
-      setIsLoading(true);
-      try {
-        let results: NewsItem[] = [];
-        
-        if (activeTab === 'naver') {
-          const response = await axios.get(`/api/news?source=naver&page=${currentPage}`);
-          results = response.data || [];
-        } else if (activeTab === 'google') {
-          const response = await axios.get(`/api/news?source=google&page=${currentPage}`);
-          results = response.data || [];
-        } else {
-          // 전체 뉴스
-          const response = await axios.get(`/api/news?page=${currentPage}`);
-          results = response.data || [];
-        }
-        
-        console.log('뉴스 데이터 로드 결과:', results);
-        
-        // 중복 뉴스 제거
-        if (currentPage > 1) {
-          const existingIds = new Set(newsItems.map(item => item.id));
-          const uniqueNewItems = results.filter(item => !existingIds.has(item.id));
-          setNewsItems(prev => [...prev, ...uniqueNewItems]);
-        } else {
-          setNewsItems(results);
-        }
-      } catch (err) {
-        console.error('뉴스 데이터 로드 중 오류 발생:', err);
-        setError('뉴스 데이터를 불러오는 중 오류가 발생했습니다.');
-      } finally {
-        setIsLoading(false);
+  const fetchNewsData = async (page: number = 1, resetData: boolean = false) => {
+    setIsLoading(true);
+    setError('');
+    
+    try {
+      let results: NewsItem[] = [];
+      
+      if (activeTab === 'naver') {
+        const response = await axios.get(`/api/news?source=naver&page=${page}`);
+        results = response.data || [];
+      } else if (activeTab === 'google') {
+        const response = await axios.get(`/api/news?source=google&page=${page}`);
+        results = response.data || [];
+      } else {
+        // 전체 뉴스
+        const response = await axios.get(`/api/news?page=${page}`);
+        results = response.data || [];
       }
-    };
+      
+      console.log('뉴스 데이터 로드 결과:', results);
+      
+      // 데이터가 없는 경우
+      if (results.length === 0 && page === 1) {
+        setError('해당 조건에 맞는 뉴스를 찾을 수 없습니다.');
+      }
+      
+      // 중복 뉴스 제거 및 이전 데이터와 병합
+      if (page > 1 && !resetData) {
+        const existingIds = new Set(newsItems.map(item => item.id));
+        const uniqueNewItems = results.filter(item => !existingIds.has(item.id));
+        setNewsItems(prev => [...prev, ...uniqueNewItems]);
+      } else {
+        setNewsItems(results);
+      }
+    } catch (err) {
+      console.error('뉴스 데이터 로드 중 오류 발생:', err);
+      setError('뉴스 데이터를 불러오는 중 오류가 발생했습니다. 네트워크 연결을 확인하거나 잠시 후 다시 시도해주세요.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
-    fetchNewsData();
-  }, [activeTab, currentPage]);
+  // 탭 변경 시 데이터 다시 로드
+  useEffect(() => {
+    setCurrentPage(1);
+    fetchNewsData(1, true);
+  }, [activeTab]);
+
+  // 페이지 변경 시 추가 데이터 로드
+  useEffect(() => {
+    if (currentPage > 1) {
+      fetchNewsData(currentPage, false);
+    }
+  }, [currentPage]);
 
   // 언론사 필터링을 위한 고유 언론사 목록 추출
   useEffect(() => {
-    const uniquePublishers = Array.from(new Set(newsItems.map(item => item.publisher)));
+    const uniquePublishers = Array.from(new Set(newsItems.map(item => item.publisher)))
+      .filter(publisher => publisher && publisher.trim() !== '');
     setPublishers(uniquePublishers);
   }, [newsItems]);
 
@@ -193,14 +229,14 @@ export default function NewsPage() {
     if (searchQuery) {
       const query = searchQuery.toLowerCase();
       filtered = filtered.filter(item => 
-        item.title.toLowerCase().includes(query) || 
-        item.summary.toLowerCase().includes(query)
+        (item.title?.toLowerCase().includes(query) || false) || 
+        (item.summary?.toLowerCase().includes(query) || false)
       );
     }
     
     // 언론사 필터 적용
     if (filterPublisher.length > 0) {
-      filtered = filtered.filter(item => filterPublisher.includes(item.publisher));
+      filtered = filtered.filter(item => filterPublisher.includes(item.publisher || ''));
     }
     
     setFilteredItems(filtered);
@@ -219,6 +255,11 @@ export default function NewsPage() {
         ? prev.filter(p => p !== publisher)
         : [...prev, publisher]
     );
+  };
+
+  // 새로고침 함수
+  const handleRefresh = () => {
+    fetchNewsData(1, true);
   };
 
   return (
@@ -280,6 +321,10 @@ export default function NewsPage() {
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
+              
+              <Button variant="ghost" size="icon" onClick={handleRefresh}>
+                <RefreshCw className="h-4 w-4" />
+              </Button>
             </div>
           </div>
 
@@ -329,6 +374,14 @@ export default function NewsPage() {
               ) : error ? (
                 <div className="text-center my-12">
                   <p className="text-destructive">{error}</p>
+                  <Button 
+                    variant="outline" 
+                    className="mt-4"
+                    onClick={handleRefresh}
+                  >
+                    <RefreshCw className="h-4 w-4 mr-2" />
+                    새로고침
+                  </Button>
                 </div>
               ) : (
                 <TabsContent value={activeTab} className="mt-0">
@@ -344,6 +397,14 @@ export default function NewsPage() {
                     ) : (
                       <div className="col-span-full text-center my-12">
                         <p className="text-muted-foreground">검색 결과가 없습니다.</p>
+                        <Button 
+                          variant="outline" 
+                          className="mt-4"
+                          onClick={handleRefresh}
+                        >
+                          <RefreshCw className="h-4 w-4 mr-2" />
+                          새로고침
+                        </Button>
                       </div>
                     )}
                   </div>
@@ -355,7 +416,7 @@ export default function NewsPage() {
                         onClick={() => setCurrentPage(prev => prev + 1)}
                         disabled={isLoading}
                       >
-                        더 보기
+                        {isLoading ? '불러오는 중...' : '더 보기'}
                       </Button>
                     </div>
                   )}

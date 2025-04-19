@@ -56,14 +56,14 @@ export async function fetchAllNews(page = 1): Promise<NewsItem[]> {
     });
     
     if (!response.data || response.data.length === 0) {
-      console.warn('뉴스 API 응답이 비어있습니다. 더미 데이터를 사용합니다.');
-      return getDummyNews();
+      console.warn('뉴스 API 응답이 비어있습니다.');
+      return [];
     }
     
     return response.data;
   } catch (error) {
     console.error('뉴스 가져오기 에러:', error);
-    return getDummyNews();
+    throw new Error('뉴스 데이터를 불러오는 데 실패했습니다.');
   }
 }
 

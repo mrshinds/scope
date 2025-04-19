@@ -1,250 +1,472 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import axios from 'axios';
-import { SourceItem } from '@/lib/types';
-import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
+import { useState, useEffect, useCallback } from 'react';
+import Link from 'next/link';
+import { useSearchParams, useRouter } from 'next/navigation';
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Separator } from '@/components/ui/separator';
-import { BookmarkIcon, ExternalLinkIcon, SearchIcon, FilterIcon } from 'lucide-react';
-import { sources as dummyData } from '@/lib/data'; // 임시 데이터로 사용
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import {
+  Pagination,
+  PaginationContent,
+  PaginationEllipsis,
+  PaginationItem,
+  PaginationLink,
+  PaginationNext,
+  PaginationPrevious,
+} from '@/components/ui/pagination';
+import { DateRangePicker } from '@/components/date-range-picker';
+import { Calendar, ChevronDown, ChevronRight, ExternalLink, Filter, Loader2, Search, Star, Tag } from 'lucide-react';
+import axios from 'axios';
+import { SourceItem } from '@/lib/types';
+import { format, parseISO } from 'date-fns';
+import { DateRange } from 'react-day-picker';
 import { DashboardLayout } from '@/components/layout/dashboard-layout';
 
 export default function PressPage() {
-  const [pressReleases, setPressReleases] = useState<SourceItem[]>([]);
-  const [filteredReleases, setFilteredReleases] = useState<SourceItem[]>([]);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [isLoading, setIsLoading] = useState(true);
+  // URL 파라미터
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const initPage = Number(searchParams.get('page') || '1');
+  const initSource = searchParams.get('source') || '';
+  const initSearch = searchParams.get('search') || '';
+
+  // 상태 관리
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState('all');
-  const [currentPage, setCurrentPage] = useState(1);
+  const [pressReleases, setPressReleases] = useState<SourceItem[]>([]);
+  const [page, setPage] = useState(initPage);
+  const [totalItems, setTotalItems] = useState(0);
+  const [hasMore, setHasMore] = useState(false);
+  const [searchTerm, setSearchTerm] = useState(initSearch);
+  const [debouncedSearch, setDebouncedSearch] = useState(initSearch);
+  const [sourceFilter, setSourceFilter] = useState(initSource);
+  const [dateRange, setDateRange] = useState<DateRange | undefined>(undefined);
+  const [selectedTags, setSelectedTags] = useState<string[]>([]);
+  const [availableTags, setAvailableTags] = useState<string[]>([]);
+  const [showFilters, setShowFilters] = useState(false);
+  const [activeSource, setActiveSource] = useState<string | null>(null);
 
+  // 한 페이지에 표시할 항목 수
+  const itemsPerPage = 10;
+
+  // 검색어 디바운스 (타이핑 완료 후 검색)
   useEffect(() => {
-    const fetchPressReleases = async () => {
-      setIsLoading(true);
-      setError(null);
-      
-      try {
-        // API 호출
-        const response = await axios.get('/api/press', {
-          params: { page: currentPage }
-        });
-        
-        if (response.data && Array.isArray(response.data) && response.data.length > 0) {
-          if (currentPage === 1) {
-            setPressReleases(response.data);
-          } else {
-            // 더 불러온 데이터 추가
-            setPressReleases(prev => [...prev, ...response.data]);
-          }
-        } else {
-          // API 응답이 비어있을 경우 임시 데이터 사용
-          console.log('API 응답이 비어있어 임시 데이터를 사용합니다.');
-          if (currentPage === 1) {
-            setPressReleases(dummyData);
-          }
-        }
-      } catch (err) {
-        console.error('보도자료 가져오기 오류:', err);
-        setError('보도자료를 불러오는 중 오류가 발생했습니다.');
-        // 에러 발생 시 임시 데이터 사용
-        if (currentPage === 1) {
-          setPressReleases(dummyData);
-        }
-      } finally {
-        setIsLoading(false);
+    const timer = setTimeout(() => {
+      setDebouncedSearch(searchTerm);
+    }, 500);
+
+    return () => clearTimeout(timer);
+  }, [searchTerm]);
+
+  // URL 파라미터 업데이트
+  const updateUrlParams = useCallback((newParams: Record<string, string | number | null>) => {
+    const params = new URLSearchParams(searchParams.toString());
+    
+    Object.entries(newParams).forEach(([key, value]) => {
+      if (value === null || value === '') {
+        params.delete(key);
+      } else {
+        params.set(key, String(value));
       }
-    };
-    
-    fetchPressReleases();
-  }, [currentPage]);
+    });
 
-  // 검색어나 필터가 변경될 때마다 필터링 수행
+    router.push(`?${params.toString()}`);
+  }, [searchParams, router]);
+
+  // 데이터 불러오기
+  const fetchPressReleases = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      // 쿼리 파라미터 구성
+      const params: Record<string, string | number> = {
+        page,
+        limit: itemsPerPage
+      };
+
+      if (debouncedSearch) params.search = debouncedSearch;
+      if (sourceFilter) params.source = sourceFilter;
+      if (dateRange?.from) params.startDate = format(dateRange.from, 'yyyy-MM-dd');
+      if (dateRange?.to) params.endDate = format(dateRange.to, 'yyyy-MM-dd');
+      if (selectedTags.length > 0) params.tags = selectedTags.join(',');
+
+      const response = await axios.get('/api/press', { params });
+      
+      setPressReleases(response.data.items || []);
+      setTotalItems(response.data.total || 0);
+      setHasMore(response.data.hasMore || false);
+      
+      // 태그 수집
+      const tags = new Set<string>();
+      response.data.items.forEach((item: SourceItem) => {
+        if (item.tags) {
+          item.tags.forEach(tag => tags.add(tag));
+        }
+      });
+      setAvailableTags(Array.from(tags));
+      
+    } catch (error) {
+      console.error('보도자료 조회 오류:', error);
+      setError('보도자료를 불러오는 중 오류가 발생했습니다.');
+    } finally {
+      setLoading(false);
+    }
+  }, [page, debouncedSearch, sourceFilter, dateRange, selectedTags]);
+
+  // 페이지 변경 시 데이터 불러오기
   useEffect(() => {
-    let filtered = [...pressReleases];
-    
-    // 기관별 필터링
-    if (activeTab !== 'all') {
-      filtered = filtered.filter(item => 
-        item.organization?.toLowerCase() === activeTab.toLowerCase() ||
-        item.source?.toLowerCase() === activeTab.toLowerCase()
-      );
-    }
-    
-    // 검색어 필터링
-    if (searchTerm) {
-      const term = searchTerm.toLowerCase();
-      filtered = filtered.filter(item => 
-        item.title.toLowerCase().includes(term) || 
-        item.summary?.toLowerCase().includes(term) ||
-        item.tags?.some(tag => tag.toLowerCase().includes(term))
-      );
-    }
-    
-    setFilteredReleases(filtered);
-  }, [pressReleases, searchTerm, activeTab]);
+    fetchPressReleases();
+  }, [fetchPressReleases]);
 
-  const handleSearch = (e: React.FormEvent) => {
-    e.preventDefault();
-    // 검색 로직은 useEffect에서 처리
+  // 페이지 변경 핸들러
+  const handlePageChange = (newPage: number) => {
+    setPage(newPage);
+    updateUrlParams({ page: newPage });
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const handleToggleScrap = (id: string) => {
-    setPressReleases(prevItems => 
-      prevItems.map(item => 
-        item.id === id ? { ...item, isScrapped: !item.isScrapped } : item
-      )
+  // 검색 핸들러
+  const handleSearch = () => {
+    setPage(1);
+    updateUrlParams({ search: searchTerm, page: 1 });
+  };
+
+  // 필터 적용 핸들러
+  const applyFilters = () => {
+    setPage(1);
+    updateUrlParams({ 
+      source: sourceFilter, 
+      page: 1,
+      // 날짜와 태그는 URL에 포함하지 않고 상태로만 관리
+    });
+  };
+
+  // 필터 초기화 핸들러
+  const resetFilters = () => {
+    setSourceFilter('');
+    setDateRange(undefined);
+    setSelectedTags([]);
+    setPage(1);
+    updateUrlParams({ source: null, page: 1 });
+  };
+
+  // 스크랩 토글 핸들러
+  const toggleScrap = async (item: SourceItem) => {
+    try {
+      // 임시로 UI만 업데이트 (API 연동 필요)
+      setPressReleases(prevItems => 
+        prevItems.map(prevItem => 
+          prevItem.id === item.id 
+            ? { ...prevItem, isScrapped: !prevItem.isScrapped } 
+            : prevItem
+        )
+      );
+      
+      // API 호출은 추후 구현
+      // await axios.put(`/api/press/scrap`, { 
+      //   id: item.id, 
+      //   isScraped: !item.isScrapped 
+      // });
+    } catch (error) {
+      console.error('스크랩 상태 변경 오류:', error);
+      // 에러 시 원상태로 복구
+      setPressReleases(prevItems => 
+        prevItems.map(prevItem => 
+          prevItem.id === item.id 
+            ? { ...prevItem, isScrapped: item.isScrapped } 
+            : prevItem
+        )
+      );
+    }
+  };
+
+  // 소스별 분류 탭
+  const sources = ['전체', '금융위원회', '금융감독원', '한국은행'];
+
+  // 태그 선택 토글
+  const toggleTag = (tag: string) => {
+    setSelectedTags(prev => 
+      prev.includes(tag) 
+        ? prev.filter(t => t !== tag) 
+        : [...prev, tag]
     );
   };
 
-  const handleViewOriginal = (url: string) => {
-    if (url && typeof url === 'string') {
-      // URL이 유효한지 확인
-      try {
-        // 유효한 URL 형식인지 확인
-        if (!url.startsWith('http://') && !url.startsWith('https://')) {
-          url = 'https://' + url;
-        }
-        new URL(url); // URL이 유효하지 않으면 에러가 발생합니다
-        window.open(url, '_blank', 'noopener,noreferrer');
-        console.log('열린 URL:', url);
-      } catch (error) {
-        console.error('유효하지 않은 URL:', url, error);
-        alert('유효하지 않은 URL입니다: ' + url);
-      }
-    } else {
-      alert('원문 링크가 없습니다.');
-    }
-  };
-
-  const handleLoadMore = () => {
-    setCurrentPage(prev => prev + 1);
-  };
+  // 소스 아이템 렌더링
+  const renderPressReleaseItem = (item: SourceItem) => (
+    <Card key={item.id} className="mb-4">
+      <CardHeader className="pb-2">
+        <div className="flex justify-between">
+          <CardTitle className="text-lg">
+            {item.title}
+          </CardTitle>
+          <Button 
+            variant="ghost" 
+            size="icon" 
+            onClick={() => toggleScrap(item)}
+            className={item.isScrapped ? "text-yellow-500" : "text-gray-300"}
+          >
+            <Star className="h-5 w-5" fill={item.isScrapped ? "currentColor" : "none"} />
+          </Button>
+        </div>
+        <CardDescription className="flex items-center gap-2 text-sm">
+          <span className="font-medium">{item.source}</span>
+          <span>•</span>
+          <time dateTime={item.date}>{format(parseISO(item.date), 'yyyy-MM-dd')}</time>
+        </CardDescription>
+      </CardHeader>
+      
+      <CardContent className="pb-3">
+        <p className="text-sm text-gray-600 mb-2">{item.summary}</p>
+        
+        {item.tags && item.tags.length > 0 && (
+          <div className="flex flex-wrap gap-1 mt-2">
+            {item.tags.map(tag => (
+              <Badge 
+                key={tag} 
+                variant="outline" 
+                className="text-xs cursor-pointer hover:bg-slate-100"
+                onClick={() => toggleTag(tag)}
+              >
+                #{tag}
+              </Badge>
+            ))}
+          </div>
+        )}
+      </CardContent>
+      
+      <CardFooter className="pt-0">
+        <div className="flex justify-between w-full">
+          <Button variant="link" className="p-0 h-auto" asChild>
+            <Link href={item.url} target="_blank" rel="noopener noreferrer">
+              <ExternalLink className="h-4 w-4 mr-1" />
+              원문 보기
+            </Link>
+          </Button>
+          
+          <Button variant="ghost" size="sm" className="text-xs" asChild>
+            <Link href={`/press/${item.id}`}>
+              상세보기
+              <ChevronRight className="h-4 w-4 ml-1" />
+            </Link>
+          </Button>
+        </div>
+      </CardFooter>
+    </Card>
+  );
 
   return (
     <DashboardLayout>
-      <div className="container mx-auto py-6 space-y-8">
-        <div className="flex flex-col space-y-4">
-          <h1 className="text-3xl font-bold">보도자료</h1>
-          <p className="text-muted-foreground">
-            금융위원회, 금융감독원, 한국은행의 최신 보도자료를 확인하세요.
-          </p>
-        </div>
-
-        <div className="flex flex-col space-y-4">
-          <form onSubmit={handleSearch} className="flex w-full max-w-lg items-center space-x-2">
+      <div className="space-y-4">
+        <div className="flex flex-col md:flex-row justify-between gap-4">
+          <div>
+            <h2 className="text-3xl font-bold tracking-tight">기관보도</h2>
+            <p className="text-muted-foreground">
+              최신 금융 규제 기관 보도자료를 확인하세요.
+            </p>
+          </div>
+          
+          <form onSubmit={(e) => { e.preventDefault(); handleSearch(); }} className="flex w-full md:w-auto gap-2">
             <Input
-              placeholder="제목, 내용, 태그로 검색"
+              placeholder="검색어 입력..."
+              className="w-full md:w-[300px]"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="flex-1"
             />
-            <Button type="submit" variant="outline">
-              <SearchIcon className="h-4 w-4 mr-2" />
+            <Button type="submit">
+              <Search className="h-4 w-4 mr-2" />
               검색
             </Button>
           </form>
-
-          <Tabs defaultValue="all" value={activeTab} onValueChange={setActiveTab} className="w-full">
-            <TabsList>
-              <TabsTrigger value="all">전체</TabsTrigger>
-              <TabsTrigger value="FSC">금융위원회</TabsTrigger>
-              <TabsTrigger value="FSS">금융감독원</TabsTrigger>
-              <TabsTrigger value="BOK">한국은행</TabsTrigger>
-            </TabsList>
-          </Tabs>
         </div>
-
-        <Separator />
-
-        {error && (
-          <div className="bg-red-50 p-4 rounded-md text-red-500">
-            {error}
-          </div>
-        )}
-
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {isLoading && currentPage === 1 ? (
-            Array(6).fill(0).map((_, index) => (
-              <Card key={`skeleton-${index}`} className="animate-pulse">
-                <CardHeader className="h-20 bg-gray-100"></CardHeader>
-                <CardContent className="py-4">
-                  <div className="h-4 bg-gray-100 rounded mb-2"></div>
-                  <div className="h-4 bg-gray-100 rounded w-3/4"></div>
-                </CardContent>
-              </Card>
-            ))
-          ) : filteredReleases.length > 0 ? (
-            filteredReleases.map(item => (
-              <Card key={item.id} className="flex flex-col h-full">
-                <CardHeader>
-                  <div className="flex justify-between items-start">
-                    <Badge variant="outline" className="mb-2">
-                      {item.organization || item.source}
-                    </Badge>
-                    <Button 
-                      variant="ghost" 
-                      size="icon" 
-                      onClick={() => handleToggleScrap(item.id)}
-                    >
-                      <BookmarkIcon 
-                        className={`h-5 w-5 ${item.isScrapped ? 'fill-yellow-400 text-yellow-400' : ''}`} 
-                      />
-                    </Button>
-                  </div>
-                  <CardTitle className="text-lg line-clamp-2">{item.title}</CardTitle>
-                  <div className="text-sm text-muted-foreground">
-                    {new Date(item.date).toLocaleDateString('ko-KR', {
-                      year: 'numeric',
-                      month: 'long',
-                      day: 'numeric'
-                    })}
-                  </div>
-                </CardHeader>
-                <CardContent className="flex-grow">
-                  <p className="text-sm line-clamp-3">{item.summary}</p>
-                  {item.tags && item.tags.length > 0 && (
-                    <div className="flex flex-wrap gap-1 mt-3">
-                      {item.tags.map((tag, idx) => (
-                        <Badge key={idx} variant="secondary" className="text-xs">
-                          {tag}
-                        </Badge>
-                      ))}
-                    </div>
-                  )}
-                </CardContent>
-                <CardFooter className="pt-1">
-                  <Button 
-                    variant="outline" 
-                    className="w-full"
-                    onClick={() => handleViewOriginal(item.url)}
-                  >
-                    <ExternalLinkIcon className="h-4 w-4 mr-2" />
-                    원본 보기
-                  </Button>
-                </CardFooter>
-              </Card>
-            ))
-          ) : (
-            <div className="col-span-full text-center py-10">
-              <p className="text-muted-foreground">검색 결과가 없습니다.</p>
+        
+        {/* 검색 및 필터 */}
+        <div className="mb-6">
+          <div className="flex gap-2 mb-4">
+            <div className="relative flex-grow">
+              <Search className="absolute left-2 top-2.5 h-4 w-4 text-gray-400" />
+              <Input
+                type="search"
+                placeholder="보도자료 검색..."
+                className="pl-8"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+              />
             </div>
-          )}
-        </div>
-
-        {!isLoading && filteredReleases.length > 0 && (
-          <div className="flex justify-center mt-8">
+            <Button onClick={handleSearch} className="shrink-0">검색</Button>
             <Button
-              onClick={handleLoadMore}
               variant="outline"
-              disabled={isLoading}
+              onClick={() => setShowFilters(!showFilters)}
+              className="shrink-0"
             >
-              {isLoading ? '불러오는 중...' : '더 보기'}
+              <Filter className="h-4 w-4 mr-2" />
+              필터
+              <ChevronDown className={`h-4 w-4 ml-1 transform transition-transform ${showFilters ? 'rotate-180' : ''}`} />
             </Button>
           </div>
+          
+          {showFilters && (
+            <Card className="mb-4">
+              <CardContent className="p-4">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div>
+                    <h3 className="text-sm font-medium mb-2">출처</h3>
+                    <select
+                      className="w-full border rounded p-2"
+                      value={sourceFilter}
+                      onChange={(e) => setSourceFilter(e.target.value)}
+                    >
+                      <option value="">모든 출처</option>
+                      <option value="금융위원회">금융위원회</option>
+                      <option value="금융감독원">금융감독원</option>
+                      <option value="한국은행">한국은행</option>
+                    </select>
+                  </div>
+                  
+                  <div>
+                    <h3 className="text-sm font-medium mb-2">날짜 범위</h3>
+                    <DateRangePicker
+                      value={dateRange}
+                      onChange={setDateRange}
+                    />
+                  </div>
+                  
+                  <div>
+                    <h3 className="text-sm font-medium mb-2">태그</h3>
+                    <div className="flex flex-wrap gap-1 max-h-24 overflow-y-auto">
+                      {availableTags.map(tag => (
+                        <Badge 
+                          key={tag} 
+                          variant={selectedTags.includes(tag) ? "default" : "outline"} 
+                          className="cursor-pointer"
+                          onClick={() => toggleTag(tag)}
+                        >
+                          #{tag}
+                        </Badge>
+                      ))}
+                      {availableTags.length === 0 && (
+                        <span className="text-sm text-gray-500">검색 결과에서 선택 가능</span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+                
+                <div className="flex justify-end mt-4 gap-2">
+                  <Button variant="outline" onClick={resetFilters}>초기화</Button>
+                  <Button onClick={applyFilters}>필터 적용</Button>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+        </div>
+        
+        {/* 소스 탭 */}
+        <Tabs defaultValue="전체" className="mb-6">
+          <TabsList className="mb-2">
+            {sources.map(source => (
+              <TabsTrigger 
+                key={source} 
+                value={source}
+                onClick={() => {
+                  setSourceFilter(source === '전체' ? '' : source);
+                  setPage(1);
+                  updateUrlParams({ 
+                    source: source === '전체' ? null : source, 
+                    page: 1 
+                  });
+                }}
+              >
+                {source}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+          
+          <Separator />
+        </Tabs>
+        
+        {/* 에러 표시 */}
+        {error && (
+          <Alert variant="destructive" className="mb-6">
+            <AlertTitle>오류 발생</AlertTitle>
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        )}
+        
+        {/* 로딩 상태 */}
+        {loading && (
+          <div className="flex justify-center items-center py-12">
+            <Loader2 className="h-8 w-8 animate-spin text-primary" />
+            <span className="ml-2">로딩 중...</span>
+          </div>
+        )}
+        
+        {/* 결과가 없는 경우 */}
+        {!loading && pressReleases.length === 0 && (
+          <div className="text-center py-12">
+            <p className="text-gray-500">검색 결과가 없습니다</p>
+            {(debouncedSearch || sourceFilter || dateRange?.from || selectedTags.length > 0) && (
+              <Button variant="outline" className="mt-4" onClick={resetFilters}>
+                필터 초기화
+              </Button>
+            )}
+          </div>
+        )}
+        
+        {/* 보도자료 목록 */}
+        <div className="space-y-4">
+          {pressReleases.map(renderPressReleaseItem)}
+        </div>
+        
+        {/* 페이지네이션 */}
+        {totalItems > 0 && (
+          <Pagination className="mt-8">
+            <PaginationContent>
+              {page > 1 && (
+                <PaginationItem>
+                  <PaginationPrevious onClick={() => handlePageChange(page - 1)} />
+                </PaginationItem>
+              )}
+              
+              {Array.from({ length: Math.min(5, Math.ceil(totalItems / itemsPerPage)) }, (_, i) => {
+                const pageNum = i + 1;
+                return (
+                  <PaginationItem key={pageNum}>
+                    <PaginationLink
+                      isActive={page === pageNum}
+                      onClick={() => handlePageChange(pageNum)}
+                    >
+                      {pageNum}
+                    </PaginationLink>
+                  </PaginationItem>
+                );
+              })}
+              
+              {hasMore && (
+                <>
+                  <PaginationItem>
+                    <PaginationEllipsis />
+                  </PaginationItem>
+                  <PaginationItem>
+                    <PaginationNext onClick={() => handlePageChange(page + 1)} />
+                  </PaginationItem>
+                </>
+              )}
+            </PaginationContent>
+          </Pagination>
         )}
       </div>
     </DashboardLayout>

@@ -1,231 +1,339 @@
 'use client';
 
-import { useState } from "react"
-import { DashboardLayout } from "@/components/layout/dashboard-layout"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
-import {
-  Bookmark,
-  Clock,
-  FileText,
-  TrendingUp,
-  Building,
-  Newspaper,
-  AlertTriangle,
-  BookmarkPlus,
-  BookmarkMinus,
-} from "lucide-react"
-import { todayIssues, sources, newsItems, tagTrends } from "@/lib/data"
-import Link from "next/link"
-import { SourceItem, NewsItem } from "@/lib/types"
+import { useState, useEffect } from 'react';
+import { useSearchParams } from 'next/navigation';
+import Link from 'next/link';
+import { 
+  Card, 
+  CardHeader, 
+  CardTitle, 
+  CardDescription, 
+  CardContent, 
+  CardFooter 
+} from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { Separator } from '@/components/ui/separator';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Input } from '@/components/ui/input';
+import { Search, Filter, Loader2, CalendarIcon, ExternalLink } from 'lucide-react';
+import { format, parseISO } from 'date-fns';
+import { ko } from 'date-fns/locale';
+import ArticleCard from '@/components/article-card';
+import { supabase } from '@/lib/supabase';
+import { DashboardLayout } from '@/components/layout/dashboard-layout';
 
 export default function DashboardPage() {
-  const [issues, setIssues] = useState<SourceItem[]>(todayIssues)
-  const [news, setNews] = useState<NewsItem[]>(newsItems.slice(0, 3))
+  const searchParams = useSearchParams();
+  const tagFilter = searchParams.get('tag');
+  
+  const [articles, setArticles] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [activeTab, setActiveTab] = useState('all');
+  const [tags, setTags] = useState<string[]>([]);
 
-  // 스크랩 토글 함수
-  const toggleScrap = (id: string, type: "issue" | "news") => {
-    if (type === "issue") {
-      setIssues(issues.map((issue) => 
-        issue.id === id ? { ...issue, isScrapped: !issue.isScrapped } : issue
-      ))
-    } else {
-      setNews(news.map((item) => 
-        item.id === id ? { ...item, isScrapped: !item.isScrapped } : item
-      ))
+  // 테스트 데이터
+  const sampleArticles = [
+    {
+      id: 'sample-1',
+      title: '금융위원회, 디지털 자산 거래소 규제 가이드라인 발표',
+      source: '금융위원회',
+      source_type: '금융위원회',
+      published_at: new Date().toISOString(),
+      source_url: 'https://example.com/article1',
+      tags: ['디지털자산', '가상화폐', '금융규제'],
+      summary: '금융위원회가 국내 디지털 자산 거래소에 대한 규제 가이드라인을 발표했습니다. 이번 가이드라인은 투자자 보호와 시장 안정성을 높이기 위한 조치로, 내년부터 적용될 예정입니다.',
+      isScrapped: false
+    },
+    {
+      id: 'sample-2',
+      title: '한국은행, 기준금리 동결 결정',
+      source: '한국은행',
+      source_type: '한국은행',
+      published_at: new Date(Date.now() - 86400000).toISOString(),
+      source_url: 'https://example.com/article2',
+      tags: ['기준금리', '통화정책', '경제전망'],
+      summary: '한국은행 금융통화위원회가 현재 3.5%인 기준금리를 유지하기로 결정했습니다. 위원회는 국내외 경제 불확실성과 물가 상승 압력 등을 고려해 금리 동결을 선택했다고 밝혔습니다.',
+      isScrapped: false
+    },
+    {
+      id: 'sample-3',
+      title: '금융감독원, 은행권 ESG 경영 평가 결과 발표',
+      source: '금융감독원',
+      source_type: '금융감독원',
+      published_at: new Date(Date.now() - 172800000).toISOString(),
+      source_url: 'https://example.com/article3',
+      tags: ['ESG', '금융감독', '지속가능경영'],
+      summary: '금융감독원이 국내 은행들의 ESG 경영 현황에 대한 평가 결과를 발표했습니다. 평가 결과에 따르면 대부분의 은행들이 환경 및 사회적 책임 부문에서 개선이 필요하다는 제언이 있었습니다.',
+      isScrapped: false
     }
-  }
+  ];
+
+  // 데이터 로드
+  useEffect(() => {
+    const fetchArticles = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+
+        // 개발 환경에서 샘플 데이터 사용 (API가 안정화될 때까지)
+        // 이 코드는 API가 안정화되면 제거할 수 있습니다
+        const isDevelopment = process.env.NODE_ENV !== 'production';
+        if (isDevelopment) {
+          console.info('개발 환경에서 내장 샘플 데이터를 사용합니다.');
+
+          // 태그 필터링 적용
+          let filteredArticles = [...sampleArticles];
+          
+          if (tagFilter) {
+            filteredArticles = filteredArticles.filter(article => 
+              article.tags.some(tag => tag.toLowerCase() === tagFilter.toLowerCase())
+            );
+          }
+          
+          // 소스 필터링 적용
+          if (activeTab !== 'all') {
+            filteredArticles = filteredArticles.filter(article =>
+              article.source_type === activeTab
+            );
+          }
+          
+          // 검색어 필터링 적용
+          if (searchTerm) {
+            const searchLower = searchTerm.toLowerCase();
+            filteredArticles = filteredArticles.filter(article =>
+              article.title.toLowerCase().includes(searchLower) ||
+              (article.summary && article.summary.toLowerCase().includes(searchLower))
+            );
+          }
+          
+          // 데이터 설정
+          setArticles(filteredArticles);
+          
+          // 태그 수집
+          const uniqueTags = new Set<string>();
+          filteredArticles.forEach(article => {
+            article.tags.forEach(tag => uniqueTags.add(tag));
+          });
+          setTags(Array.from(uniqueTags));
+          
+          setLoading(false);
+          return; // API 호출 스킵
+        }
+
+        // 실제 API 호출
+        try {
+          const response = await fetch('/api/articles?' + new URLSearchParams({
+            tag: tagFilter || '',
+            source: activeTab !== 'all' ? activeTab : '',
+            search: searchTerm
+          }));
+
+          if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            const errorMessage = errorData.error || `서버 오류 (${response.status})`;
+            console.error('API 오류 상세:', { status: response.status, message: errorMessage, data: errorData });
+            throw new Error(errorMessage);
+          }
+
+          const data = await response.json();
+          
+          // 유효한 데이터 확인
+          if (!data || !Array.isArray(data.items)) {
+            console.warn('API 응답에 유효한 items 배열이 없습니다:', data);
+            setArticles([]);
+            setTags([]);
+            return;
+          }
+          
+          setArticles(data.items);
+          
+          // 태그 수집
+          const uniqueTags = new Set<string>();
+          data.items.forEach((article: any) => {
+            article.tags?.forEach((tag: string) => uniqueTags.add(tag));
+          });
+          setTags(Array.from(uniqueTags));
+          
+        } catch (fetchError) {
+          console.error('API 요청 실패:', fetchError);
+          
+          // API 서버가 실행되지 않았을 수 있음
+          if (fetchError instanceof TypeError && fetchError.message.includes('fetch')) {
+            setError('API 서버에 연결할 수 없습니다. 서버가 실행 중인지 확인하세요.');
+          } else {
+            setError(fetchError instanceof Error ? fetchError.message : String(fetchError));
+          }
+          
+          // 개발 환경에서는 임시 데이터 사용
+          if (isDevelopment) {
+            console.info('개발 환경에서 임시 데이터를 사용합니다.');
+            const dummyArticles = [
+              {
+                id: 'temp-1',
+                title: '금융위원회, 디지털 자산 거래소 규제 가이드라인 발표',
+                source: '금융위원회',
+                source_type: '금융위원회',
+                published_at: new Date().toISOString(),
+                tags: ['디지털자산', '가상화폐', '금융규제'],
+                summary: '금융위원회가 국내 디지털 자산 거래소에 대한 규제 가이드라인을 발표했습니다. 이번 가이드라인은 투자자 보호와 시장 안정성을 높이기 위한 조치로, 내년부터 적용될 예정입니다.'
+              },
+              {
+                id: 'temp-2',
+                title: '한국은행, 기준금리 동결 결정',
+                source: '한국은행',
+                source_type: '한국은행',
+                published_at: new Date(Date.now() - 86400000).toISOString(),
+                tags: ['기준금리', '통화정책', '경제전망'],
+                summary: '한국은행 금융통화위원회가 현재 3.5%인 기준금리를 유지하기로 결정했습니다. 위원회는 국내외 경제 불확실성과 물가 상승 압력 등을 고려해 금리 동결을 선택했다고 밝혔습니다.'
+              },
+              {
+                id: 'temp-3',
+                title: '금융감독원, 은행권 ESG 경영 평가 결과 발표',
+                source: '금융감독원',
+                source_type: '금융감독원',
+                published_at: new Date(Date.now() - 172800000).toISOString(),
+                tags: ['ESG', '금융감독', '지속가능경영'],
+                summary: '금융감독원이 국내 은행들의 ESG 경영 현황에 대한 평가 결과를 발표했습니다. 평가 결과에 따르면 대부분의 은행들이 환경 및 사회적 책임 부문에서 개선이 필요하다는 제언이 있었습니다.'
+              }
+            ];
+            
+            // 태그 및 소스 필터링을 적용한 임시 데이터
+            let filteredArticles = [...dummyArticles];
+            
+            if (tagFilter) {
+              filteredArticles = filteredArticles.filter(article => 
+                article.tags.some(tag => tag.toLowerCase() === tagFilter.toLowerCase())
+              );
+            }
+            
+            if (activeTab !== 'all') {
+              filteredArticles = filteredArticles.filter(article =>
+                article.source_type === activeTab
+              );
+            }
+            
+            if (searchTerm) {
+              const searchLower = searchTerm.toLowerCase();
+              filteredArticles = filteredArticles.filter(article =>
+                article.title.toLowerCase().includes(searchLower) ||
+                article.summary.toLowerCase().includes(searchLower)
+              );
+            }
+            
+            setArticles(filteredArticles);
+            
+            // 임시 태그 설정
+            const uniqueTags = new Set<string>();
+            filteredArticles.forEach(article => {
+              article.tags.forEach(tag => uniqueTags.add(tag));
+            });
+            setTags(Array.from(uniqueTags));
+          }
+        }
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchArticles();
+  }, [tagFilter, activeTab, searchTerm]);
+
+  // 검색 핸들러
+  const handleSearch = (e: React.FormEvent) => {
+    e.preventDefault();
+    // 이미 useEffect에서 searchTerm의 변경을 감지하여 데이터를 다시 불러옴
+  };
+
+  const handleTagClick = (tag: string) => {
+    // 태그 페이지로 이동
+    window.location.href = `/dashboard?tag=${encodeURIComponent(tag)}`;
+  };
 
   return (
     <DashboardLayout>
-      <div className="flex flex-col space-y-6">
-        <div className="flex justify-between items-center">
-          <h1 className="text-2xl font-bold">오늘의 이슈</h1>
-          <Button variant="outline" asChild>
-            <Link href="/issues">더 보기</Link>
-          </Button>
-        </div>
-
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">
-                오늘의 이슈
-              </CardTitle>
-              <AlertTriangle className="h-4 w-4 text-yellow-500" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{issues.length}</div>
-              <p className="text-xs text-muted-foreground">
-                최근 업데이트: 오늘
-              </p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">
-                미확인 알림
-              </CardTitle>
-              <Clock className="h-4 w-4 text-blue-500" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">3</div>
-              <p className="text-xs text-muted-foreground">
-                최근 확인: 1시간 전
-              </p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">
-                이슈 키워드
-              </CardTitle>
-              <TrendingUp className="h-4 w-4 text-green-500" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{tagTrends[0].name}</div>
-              <p className="text-xs text-muted-foreground">
-                최다 언급: {tagTrends[0].count}회
-              </p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">
-                스크랩 자료
-              </CardTitle>
-              <Bookmark className="h-4 w-4 text-violet-500" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">
-                {issues.filter((i) => i.isScrapped).length + news.filter((n) => n.isScrapped).length}
-              </div>
-              <p className="text-xs text-muted-foreground">
-                최근 스크랩: 오늘
-              </p>
-            </CardContent>
-          </Card>
-        </div>
-
-        <div className="space-y-4">
-          <h2 className="text-xl font-semibold">주요 금융당국 보도자료</h2>
-          <div className="grid gap-4">
-            {issues.map((issue) => (
-              <Card key={issue.id}>
-                <CardContent className="p-4">
-                  <div className="flex flex-col md:flex-row justify-between">
-                    <div className="flex-1 space-y-2">
-                      <div className="flex items-center space-x-2">
-                        <Building className="h-4 w-4 text-gray-500" />
-                        <span className="text-sm font-medium text-gray-500">
-                          {issue.source}
-                        </span>
-                        <span className="text-xs text-gray-400">
-                          {issue.date}
-                        </span>
-                      </div>
-                      <h3 className="font-medium">{issue.title}</h3>
-                      <p className="text-sm text-gray-600">{issue.summary}</p>
-                      <div className="flex flex-wrap gap-2 pt-2">
-                        {issue.tags.map((tag) => (
-                          <span
-                            key={tag}
-                            className="bg-secondary text-secondary-foreground px-2 py-1 rounded-full text-xs"
-                          >
-                            {tag}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                    <div className="flex items-start space-x-2 mt-4 md:mt-0">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => toggleScrap(issue.id, "issue")}
-                      >
-                        {issue.isScrapped ? (
-                          <BookmarkMinus className="h-4 w-4 mr-1" />
-                        ) : (
-                          <BookmarkPlus className="h-4 w-4 mr-1" />
-                        )}
-                        {issue.isScrapped ? "스크랩 해제" : "스크랩"}
-                      </Button>
-                      <Button variant="outline" size="sm" asChild>
-                        <Link href={issue.url} target="_blank">
-                          <FileText className="h-4 w-4 mr-1" />
-                          원문
-                        </Link>
-                      </Button>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
+      <div className="space-y-4">
+        <div className="flex flex-col md:flex-row justify-between gap-4">
+          <div>
+            <h2 className="text-3xl font-bold tracking-tight">대시보드</h2>
+            <p className="text-muted-foreground">
+              최신 금융 규제 및 정책 정보를 확인하세요.
+            </p>
           </div>
-        </div>
-
-        <div className="space-y-4">
-          <div className="flex justify-between items-center">
-            <h2 className="text-xl font-semibold">최신 언론보도</h2>
-            <Button variant="outline" asChild>
-              <Link href="/news">더 보기</Link>
+          
+          <form onSubmit={handleSearch} className="flex w-full md:w-auto gap-2">
+            <Input
+              placeholder="검색어 입력..."
+              className="w-full md:w-[300px]"
+              value={searchTerm}
+              onChange={e => setSearchTerm(e.target.value)}
+            />
+            <Button type="submit">
+              <Search className="h-4 w-4 mr-2" />
+              검색
             </Button>
+          </form>
+        </div>
+
+        {/* 소스 탭 */}
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="mb-6">
+          <TabsList className="grid grid-cols-3 w-full max-w-md">
+            <TabsTrigger value="all">전체</TabsTrigger>
+            <TabsTrigger value="금융위원회">금융위</TabsTrigger>
+            <TabsTrigger value="금융감독원">금감원</TabsTrigger>
+          </TabsList>
+          <Separator className="my-4" />
+        </Tabs>
+
+        {/* 태그 리스트 */}
+        {tags.length > 0 && (
+          <div className="mb-6">
+            <h3 className="text-sm font-medium mb-2">인기 태그</h3>
+            <div className="flex flex-wrap gap-2">
+              {tags.map((tag) => (
+                <Badge 
+                  key={tag} 
+                  variant="outline" 
+                  className="cursor-pointer hover:bg-slate-100"
+                  onClick={() => handleTagClick(tag)}
+                >
+                  {tag}
+                </Badge>
+              ))}
+            </div>
           </div>
-          <div className="grid gap-4">
-            {news.map((item) => (
-              <Card key={item.id}>
-                <CardContent className="p-4">
-                  <div className="flex flex-col md:flex-row justify-between">
-                    <div className="flex-1 space-y-2">
-                      <div className="flex items-center space-x-2">
-                        <Newspaper className="h-4 w-4 text-gray-500" />
-                        <span className="text-sm font-medium text-gray-500">
-                          {item.source}
-                        </span>
-                        <span className="text-xs text-gray-400">
-                          {item.date}
-                        </span>
-                      </div>
-                      <h3 className="font-medium">{item.title}</h3>
-                      <p className="text-sm text-gray-600">{item.summary}</p>
-                      <div className="flex flex-wrap gap-2 pt-2">
-                        {item.tags.map((tag) => (
-                          <span
-                            key={tag}
-                            className="bg-secondary text-secondary-foreground px-2 py-1 rounded-full text-xs"
-                          >
-                            {tag}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                    <div className="flex items-start space-x-2 mt-4 md:mt-0">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => toggleScrap(item.id, "news")}
-                      >
-                        {item.isScrapped ? (
-                          <BookmarkMinus className="h-4 w-4 mr-1" />
-                        ) : (
-                          <BookmarkPlus className="h-4 w-4 mr-1" />
-                        )}
-                        {item.isScrapped ? "스크랩 해제" : "스크랩"}
-                      </Button>
-                      <Button variant="outline" size="sm" asChild>
-                        <Link href={item.url} target="_blank">
-                          <FileText className="h-4 w-4 mr-1" />
-                          원문
-                        </Link>
-                      </Button>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
+        )}
+
+        {/* 로딩 상태 */}
+        {loading && (
+          <div className="flex justify-center items-center py-12">
+            <Loader2 className="h-6 w-6 animate-spin mr-2" />
+            <span>데이터를 불러오는 중...</span>
           </div>
+        )}
+
+        {/* 에러 메시지 */}
+        {error && (
+          <div className="bg-red-50 text-red-500 p-4 rounded-md mb-6">
+            <p>{error}</p>
+          </div>
+        )}
+
+        {/* 기사 목록 */}
+        {!loading && articles.length === 0 && (
+          <div className="text-center py-12 text-gray-500">
+            검색 결과가 없습니다.
+          </div>
+        )}
+
+        <div className="grid grid-cols-1 gap-6">
+          {articles.map((article) => (
+            <ArticleCard key={article.id} article={article} />
+          ))}
         </div>
       </div>
     </DashboardLayout>
-  )
+  );
 } 

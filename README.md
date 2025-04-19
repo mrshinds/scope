@@ -1,71 +1,95 @@
-# SCOPE (Shinhan Consumer Protection Eye)
+# SCOPE - 금융 정책/보도자료 모니터링 시스템
 
-신한은행 소비자보호부 내부 직원용 이슈 감지 플랫폼 'SCOPE'의 프로토타입입니다.
-
-## 개요
-
-SCOPE는 신한은행 소비자보호부 직원들이 금융 소비자 보호 관련 이슈를 효율적으로 모니터링하고 관리할 수 있도록 설계된 웹 애플리케이션입니다. 다양한 소스에서 수집된 데이터를 통합하여 이슈를 감지하고, 이를 직원들이 쉽게 확인하고 스크랩할 수 있는 기능을 제공합니다.
+SCOPE는 금융 정책과 보도자료를 자동으로 수집하고, GPT-4를 활용해 요약하며, 관련 태그를 제공하는 모니터링 시스템입니다.
 
 ## 주요 기능
 
-- **이메일 인증 기반 로그인**: 신한은행 웹메일 주소(@shinhan.com)를 통한 8자리 인증코드 발송 및 인증
-- **대시보드**: 오늘 수집된 요약 이슈 확인
-- **보도자료 관리**: 기관/언론사별 보도자료 목록 확인 및 스크랩
-- **스크랩 아카이브**: 중요 자료 스크랩 및 메모 기능
-- **관리자 대시보드**: 이슈 수, 태그 트렌드, 사용자 활동 로그 등 확인
+- 금융위원회, 금융감독원 등 금융당국의 정책 및 보도자료 자동 수집
+- GPT-4를 활용한 자동 요약 및 태그 생성
+- 태그 및 키워드 기반 검색 기능
+- 관리자용 태그 및 요약 수정 기능
+- 중요 정책 스크랩 기능
 
 ## 기술 스택
 
-- **프론트엔드**: Next.js (App Router), React, TypeScript
-- **스타일링**: TailwindCSS, Shadcn UI
-- **배포**: Vercel
+- **프론트엔드**: Next.js 14, TypeScript, TailwindCSS, Shadcn/UI
+- **백엔드**: Next.js API Routes, Supabase
+- **AI 통합**: OpenAI GPT-4
+- **인프라**: Vercel, Supabase
 
-## 로컬 개발 환경 설정
+## 개발 환경 설정
 
-1. 저장소 클론
-```bash
-git clone https://github.com/username/scope.git
-cd scope
+### 필수 조건
+
+- Node.js 18+
+- npm 또는 yarn
+- Supabase 계정 (로컬 개발은 샘플 데이터로 가능)
+
+### 환경 변수 설정
+
+1. 프로젝트 루트에 `.env.local` 파일을 생성하고 다음 변수를 설정합니다:
+
+```
+# Supabase 설정
+NEXT_PUBLIC_SUPABASE_URL=your_supabase_url
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
+SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key
+
+# OpenAI 설정
+OPENAI_API_KEY=your_openai_api_key
 ```
 
-2. 의존성 설치
+2. 환경 변수가 없는 개발 환경에서는 샘플 데이터가 자동으로 표시됩니다.
+
+### 설치 및 실행
+
 ```bash
+# 패키지 설치
 npm install
-```
 
-3. 개발 서버 실행
-```bash
+# 개발 서버 실행
 npm run dev
 ```
 
-4. 브라우저에서 `http://localhost:3000`으로 접속하여 애플리케이션 확인
+### 테스트 데이터 생성
+
+Supabase에 테스트 데이터를 생성하려면 다음 방법 중 하나를 선택할 수 있습니다:
+
+#### 1. API를 통한 테스트 데이터 생성
+개발 서버 실행 후 다음 API를 호출합니다:
+
+```bash
+curl -X POST http://localhost:3000/api/generate-test-data
+```
+
+또는 브라우저에서 개발 툴을 열고 다음 코드를 실행합니다:
+
+```javascript
+fetch('/api/generate-test-data', {method: 'POST'})
+  .then(res => res.json())
+  .then(data => console.log('테스트 데이터 생성 결과:', data));
+```
+
+#### 2. SQL 스크립트를 통한 테이블 생성
+
+Supabase 대시보드에서 SQL 편집기를 열고 프로젝트의 `src/lib/create-supabase-tables.sql` 파일 내용을 실행합니다.
 
 ## 프로젝트 구조
 
 ```
-scope/
-├── src/
-│   ├── app/                # 페이지 및 라우팅
-│   │   ├── login/          # 로그인 화면
-│   │   ├── verify/         # 인증 코드 확인 화면
-│   │   ├── set-password/   # 비밀번호 설정 화면
-│   │   ├── dashboard/      # 메인 대시보드
-│   │   ├── sources/        # 보도자료 목록
-│   │   ├── archive/        # 스크랩 자료
-│   │   └── admin/dashboard/# 관리자 대시보드
-│   ├── components/         # 재사용 가능한 컴포넌트
-│   │   ├── forms/          # 폼 관련 컴포넌트
-│   │   ├── layout/         # 레이아웃 컴포넌트
-│   │   └── ui/             # UI 컴포넌트
-│   └── lib/                # 유틸리티 및 공통 함수
-│       ├── utils.ts        # 유틸리티 함수
-│       ├── email.ts        # 이메일 전송 모듈
-│       ├── types.ts        # 타입 정의
-│       └── auth.ts         # 인증 관련 유틸리티
-├── public/                 # 정적 파일
-└── ...                     # 구성 파일
+/src
+  /app                  # Next.js 앱 라우터
+    /api                # API 라우트
+    /dashboard          # 대시보드 페이지
+    /articles           # 기사 상세 페이지
+  /components           # 재사용 컴포넌트
+    /ui                 # UI 컴포넌트 
+  /lib                  # 유틸리티 및 공통 함수
+  /styles               # 전역 스타일
 ```
 
-## 라이선스
+## 참고 사항
 
-이 프로젝트는 내부용으로 신한은행의 소유입니다. 
+- 개발 환경에서는 기본적으로 샘플 데이터가 표시됩니다.
+- Supabase 연결이 필요한 기능은 환경 변수가 설정된 경우에만 정상 작동합니다.
+- 오류가 발생할 경우 콘솔에서 상세 정보를 확인할 수 있습니다. 
