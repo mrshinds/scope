@@ -4,11 +4,11 @@ import { supabase } from '@/lib/supabase';
 // GET 라우트 핸들러 - params.id로 동적 경로 세그먼트 접근
 export async function GET(
   request: Request,
-  context: { params: { id: string } }
+  { params }: { params: Record<string, string> }
 ) {
-  try {
-    const { id } = context.params;
+  const { id } = params;
 
+  try {
     if (!id) {
       return NextResponse.json(
         { error: 'ID가 필요합니다' },
