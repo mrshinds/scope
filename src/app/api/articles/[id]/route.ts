@@ -4,7 +4,7 @@ import { supabase } from '@/lib/supabase';
 // GET 라우트 핸들러 - params.id로 동적 경로 세그먼트 접근
 export async function GET(
   request: Request,
-  { params }: { params: Record<string, string> }
+  { params }: any
 ) {
   const { id } = params;
 
