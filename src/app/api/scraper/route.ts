@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import axios from 'axios';
-import cheerio from 'cheerio';
+import * as cheerio from 'cheerio';
 import { SourceItem } from '@/lib/types';
 
 // 2024년 1월 1일 기준 날짜
