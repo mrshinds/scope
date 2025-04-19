@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
 
+// Next.js 15.3.1 App Router에 맞게 동적 라우트 파라미터 처리
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  context: { params: { id: string } }
 ) {
   try {
-    const id = params.id;
+    const id = context.params.id;
 
     if (!id) {
       return NextResponse.json(
