@@ -21,15 +21,23 @@ export function EmailForm() {
   const [success, setSuccess] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [apiUrl, setApiUrl] = useState("");
+  const [debugInfo, setDebugInfo] = useState<any>(null);
 
   // URL 파라미터에서 오류 메시지 확인
   useEffect(() => {
     if (searchParams) {
       const errorParam = searchParams.get('error');
-      const errorMessage = searchParams.get('message');
+      const errorMessage = searchParams.get('message') || searchParams.get('error_description');
       
       if (errorParam) {
         setError(`인증 오류: ${errorParam}${errorMessage ? ` - ${errorMessage}` : ''}`);
+        
+        // 디버그 정보 저장
+        setDebugInfo({
+          error: errorParam,
+          message: errorMessage,
+          time: new Date().toISOString()
+        });
       }
     }
   }, [searchParams]);
@@ -49,6 +57,7 @@ export function EmailForm() {
     e.preventDefault();
     setError("");
     setSuccess("");
+    setDebugInfo(null);
 
     if (!email) {
       setError("이메일을 입력해주세요.");
@@ -67,7 +76,13 @@ export function EmailForm() {
       const redirectUrl = `${apiUrl}/auth/callback`;
       console.log('이메일 인증 리디렉션 URL:', redirectUrl);
       
-      // Supabase Auth를 이용한 매직 링크 발송 (OTP 대신 매직 링크 사용)
+      // Supabase Auth를 이용한 매직 링크 발송 (직접 로그 확인)
+      console.log('매직 링크 요청 시작:', {
+        email,
+        redirectUrl,
+        time: new Date().toISOString()
+      });
+      
       const { data, error: authError } = await supabase.auth.signInWithOtp({
         email,
         options: {
@@ -77,8 +92,16 @@ export function EmailForm() {
       });
 
       if (authError) {
+        console.error('인증 메일 발송 오류:', authError);
         setError(`인증 메일 발송 실패: ${authError.message}`);
-        console.error("인증 메일 발송 오류:", authError);
+        
+        // 디버그 정보 저장
+        setDebugInfo({
+          type: 'auth_error',
+          message: authError.message,
+          time: new Date().toISOString()
+        });
+        
         return;
       }
 
@@ -89,9 +112,25 @@ export function EmailForm() {
       
       // 이메일 세션 저장
       sessionStorage.setItem("pendingAuthEmail", email);
-    } catch (error) {
+      
+      // 디버그 정보 저장
+      setDebugInfo({
+        type: 'success',
+        email,
+        redirectUrl,
+        time: new Date().toISOString()
+      });
+    } catch (error: any) {
       console.error("이메일 인증 처리 오류:", error);
       setError("인증 메일 발송 중 오류가 발생했습니다. 다시 시도해주세요.");
+      
+      // 디버그 정보 저장
+      setDebugInfo({
+        type: 'exception',
+        message: error.message,
+        stack: error.stack,
+        time: new Date().toISOString()
+      });
     } finally {
       setIsLoading(false);
     }
@@ -103,24 +142,37 @@ export function EmailForm() {
     
     setIsLoading(true);
     try {
-      // 개발 환경에서 매직 링크 대신 직접 세션 생성
-      const { data, error } = await supabase.auth.signInWithPassword({
+      // 개발 환경에서 매직 링크 대신 직접 테스트
+      console.log('테스트 매직 링크 생성 중...');
+      
+      const { data, error } = await supabase.auth.signInWithOtp({
         email: 'test@example.com',
-        password: 'password123',
+        options: {
+          emailRedirectTo: `${apiUrl}/auth/callback`,
+        }
       });
 
       if (error) {
-        console.error('테스트 로그인 오류:', error);
+        console.error('테스트 인증 오류:', error);
+        setError(`테스트 인증 실패: ${error.message}`);
         return;
       }
 
-      console.log('테스트 로그인 성공:', data.session ? '세션 있음' : '세션 없음');
-      router.push('/dashboard');
-    } catch (error) {
+      console.log('테스트 인증 성공:', data);
+      setSuccess('테스트 인증 이메일이 발송되었습니다. 터미널에서 매직 링크를 확인하세요.');
+    } catch (error: any) {
       console.error("개발 환경 인증 오류:", error);
+      setError(`개발 환경 인증 오류: ${error.message}`);
     } finally {
       setIsLoading(false);
     }
+  };
+
+  // 직접 콜백 테스트
+  const handleTestCallback = () => {
+    // 테스트 코드로 콜백 URL 직접 방문
+    const testUrl = `${apiUrl}/auth/callback?code=test`;
+    window.location.href = testUrl;
   };
 
   return (
@@ -149,6 +201,13 @@ export function EmailForm() {
         </Alert>
       )}
       
+      {/* 디버그 정보 표시 (개발 모드에서만) */}
+      {debugInfo && process.env.NODE_ENV !== 'production' && (
+        <div className="p-2 bg-gray-100 text-xs font-mono overflow-x-auto">
+          <pre>{JSON.stringify(debugInfo, null, 2)}</pre>
+        </div>
+      )}
+      
       <Button type="submit" className="w-full" disabled={isLoading}>
         {isLoading ? (
           <>
@@ -160,14 +219,26 @@ export function EmailForm() {
       </Button>
 
       {process.env.NODE_ENV !== 'production' && (
-        <Button 
-          type="button" 
-          variant="outline" 
-          className="w-full mt-2" 
-          onClick={handleDevAuth}
-        >
-          개발 환경 테스트 인증
-        </Button>
+        <>
+          <Button 
+            type="button" 
+            variant="outline" 
+            className="w-full mt-2" 
+            onClick={handleDevAuth}
+            disabled={isLoading}
+          >
+            테스트 인증 메일 발송
+          </Button>
+          
+          <Button 
+            type="button" 
+            variant="secondary" 
+            className="w-full mt-2" 
+            onClick={handleTestCallback}
+          >
+            콜백 URL 테스트
+          </Button>
+        </>
       )}
     </form>
   )

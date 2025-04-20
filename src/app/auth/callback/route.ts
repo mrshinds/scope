@@ -2,10 +2,26 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 
 export async function GET(request: NextRequest) {
+  // 디버깅을 위한 요청 정보 로깅
+  console.log('=== 인증 콜백 핸들러 호출됨 ===');
+  console.log('요청 URL:', request.url);
+  
   const requestUrl = new URL(request.url);
   const code = requestUrl.searchParams.get('code');
+  const error = requestUrl.searchParams.get('error');
+  const errorDescription = requestUrl.searchParams.get('error_description');
   
-  console.log('인증 콜백 호출됨, code 파라미터:', code ? '존재함' : '없음');
+  console.log('코드 파라미터:', code ? '존재함' : '없음');
+  console.log('에러 파라미터:', error || '없음');
+  console.log('에러 설명:', errorDescription || '없음');
+  
+  // 오류 파라미터가 있으면 처리
+  if (error) {
+    console.error('Supabase 인증 오류:', error, errorDescription);
+    return NextResponse.redirect(
+      new URL(`/login?error=${encodeURIComponent(error)}&error_description=${encodeURIComponent(errorDescription || '')}`, request.url)
+    );
+  }
 
   // code가 없으면 홈 페이지로 리디렉션
   if (!code) {
@@ -18,19 +34,23 @@ export async function GET(request: NextRequest) {
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
     const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 
-    console.log('Supabase 설정 확인:', {
+    console.log('Supabase 설정:', {
       urlExists: !!supabaseUrl,
-      keyExists: !!supabaseAnonKey
+      keyExists: !!supabaseAnonKey,
+      url: supabaseUrl
     });
 
-    // Supabase 클라이언트 생성
+    // Supabase 클라이언트 생성 (쿠키 옵션 개선)
     const supabase = createClient(supabaseUrl, supabaseAnonKey, {
       auth: {
         autoRefreshToken: true,
-        persistSession: true
+        persistSession: true,
+        detectSessionInUrl: true
       }
     });
 
+    console.log('세션 교환 시도 중...');
+    
     // 인증 코드로 세션 교환
     const { data, error } = await supabase.auth.exchangeCodeForSession(code);
 
@@ -42,17 +62,24 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    console.log('인증 성공, 세션 정보:', data ? '존재함' : '없음');
+    console.log('인증 성공:', data ? '데이터 있음' : '데이터 없음');
+    if (data?.session) {
+      console.log('사용자 정보:', data.session.user.email);
+      console.log('세션 만료:', new Date(data.session.expires_at! * 1000).toLocaleString());
+    }
     
     // 세션 정보가 있는지 확인
     if (data?.session) {
-      console.log('사용자 인증 완료:', data.session.user.email);
+      // 세션 확인을 위한 테스트 쿠키 설정
+      const response = NextResponse.redirect(new URL('/dashboard?login_success=true', request.url));
+      response.cookies.set('auth_test', 'true', { 
+        path: '/',
+        maxAge: 60 * 60 * 24, // 24시간
+        sameSite: 'lax'
+      });
       
-      // 성공 메시지와 함께 대시보드로 리디렉션
-      const successUrl = new URL('/dashboard', request.url);
-      successUrl.searchParams.set('login_success', 'true');
-      
-      return NextResponse.redirect(successUrl);
+      console.log('대시보드로 리디렉션 중...');
+      return response;
     } else {
       console.error('세션 정보가 없습니다.');
       return NextResponse.redirect(
@@ -61,6 +88,7 @@ export async function GET(request: NextRequest) {
     }
   } catch (error: any) {
     console.error('인증 콜백 처리 예외:', error);
+    console.error('스택 트레이스:', error.stack);
 
     // 오류 발생 시 로그인 페이지로 리디렉션 (오류 메시지 포함)
     return NextResponse.redirect(

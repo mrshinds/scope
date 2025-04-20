@@ -12,24 +12,33 @@ const authRoutes = ['/auth/callback', '/login', '/verify', '/set-password'];
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
+  
+  // 디버깅 로그 추가
+  console.log('미들웨어 실행:', pathname);
 
   // 인증 콜백 URL은 그대로 통과
   if (pathname.startsWith('/auth/callback')) {
+    console.log('인증 콜백 경로 감지:', pathname);
+    console.log('쿼리 파라미터:', request.nextUrl.searchParams.toString());
     return NextResponse.next();
   }
 
   // 로그인, 회원가입 등 인증 관련 페이지는 그대로 통과
   if (authRoutes.some(route => pathname.startsWith(route))) {
+    console.log('인증 관련 경로 감지:', pathname);
     return NextResponse.next();
   }
 
   // 공개 API는 인증 없이 허용
   if (publicApiRoutes.some(route => pathname.startsWith(route))) {
+    console.log('공개 API 경로 감지:', pathname);
     return NextResponse.next();
   }
 
   // 보호된 경로에만 인증 적용
   if (protectedRoutes.some(route => pathname.startsWith(route))) {
+    console.log('보호된 경로 감지:', pathname);
+    
     // Supabase 클라이언트 초기화
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
     const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
@@ -40,34 +49,29 @@ export async function middleware(request: NextRequest) {
     // 쿠키에서 세션 정보 가져오기
     const { data: { session } } = await supabase.auth.getSession();
 
+    console.log('세션 상태:', session ? '인증됨' : '인증되지 않음');
+
     // 인증되지 않은 사용자면 로그인 페이지로 리디렉션
     if (!session) {
       const redirectUrl = new URL('/login', request.url);
       redirectUrl.searchParams.set('redirect', pathname);
+      console.log('인증되지 않음, 리디렉션:', redirectUrl.toString());
       return NextResponse.redirect(redirectUrl);
     }
   }
 
   // 그 외 모든 요청은 계속 진행
+  console.log('일반 경로 통과:', pathname);
   return NextResponse.next();
 }
 
-// 미들웨어가 실행될 경로 구성
+// 미들웨어가 실행될 경로 구성 - 모든 경로에 대해 실행하도록 수정
 export const config = {
   matcher: [
     /*
      * 다음 경로에 미들웨어 실행
-     * - 모든 API 경로 (/api/*)
-     * - 대시보드와 관리자 페이지 (/dashboard/*, /admin/*)
-     * - 인증 콜백 등 (/auth/*)
-     * - 개인 페이지 (/my/*)
-     * - 스크랩 페이지 (/scraps/*)
+     * - 모든 경로 ('/(.*)')
      */
-    '/api/:path*',
-    '/dashboard/:path*',
-    '/admin/:path*',
-    '/auth/:path*',
-    '/my/:path*',
-    '/scraps/:path*',
+    '/(.*)',
   ],
 }; 
