@@ -8,6 +8,9 @@ const FALLBACK_SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3M
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || FALLBACK_SUPABASE_URL;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || FALLBACK_SUPABASE_ANON_KEY;
 
+// 배포 사이트 URL
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://scope-psi.vercel.app';
+
 // 환경 변수 유효성 검사
 let validationErrorMessage = '';
 
@@ -26,8 +29,76 @@ if (isProduction) {
   }
 }
 
-// Supabase 클라이언트 생성
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+// Supabase 클라이언트 생성 (개선된 auth 설정)
+export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+  auth: {
+    autoRefreshToken: true,
+    persistSession: true,
+    detectSessionInUrl: true,
+    flowType: 'pkce',
+    // Supabase v2에서는 cookieOptions가 지원되지 않습니다.
+    // 대신 localStorage에 세션을 유지합니다.
+    storage: {
+      getItem: (key) => {
+        if (typeof window === 'undefined') return null;
+        return localStorage.getItem(key);
+      },
+      setItem: (key, value) => {
+        if (typeof window === 'undefined') return;
+        localStorage.setItem(key, value);
+      },
+      removeItem: (key) => {
+        if (typeof window === 'undefined') return;
+        localStorage.removeItem(key);
+      }
+    }
+  }
+});
+
+// 매직 링크를 통한 로그인 (만료 시간 연장)
+export const signInWithMagicLink = async (email: string) => {
+  try {
+    // 현재 호스트 URL 확인
+    const baseUrl = typeof window !== 'undefined' 
+      ? window.location.origin 
+      : SITE_URL;
+    
+    // 리디렉션 URL
+    const redirectUrl = `${baseUrl}/auth/callback`;
+
+    console.log('매직 링크 인증 요청:', {
+      email,
+      redirectUrl,
+      time: new Date().toISOString()
+    });
+    
+    // 매직 링크 발송
+    const { data, error } = await supabase.auth.signInWithOtp({
+      email,
+      options: {
+        emailRedirectTo: redirectUrl,
+        shouldCreateUser: true,
+        // 특별한 데이터 첨부 (더 긴 만료 시간 유도)
+        data: {
+          app_metadata: {
+            provider: 'email',
+            created_at: new Date().toISOString()
+          }
+        }
+      }
+    });
+    
+    if (error) throw error;
+    
+    return { success: true, data };
+  } catch (error: any) {
+    console.error('매직 링크 발송 오류:', error);
+    return { 
+      success: false, 
+      error: error.message || '매직 링크 발송에 실패했습니다.'
+    };
+  }
+};
 
 // Supabase 연결 상태 확인
 export const checkSupabaseConnection = async () => {

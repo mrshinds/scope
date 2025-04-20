@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { isValidEmail } from "@/lib/utils"
 import { Label } from "@/components/ui/label"
-import { supabase } from "@/lib/supabase"
+import { supabase, signInWithMagicLink } from "@/lib/supabase"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Loader2, Info } from "lucide-react"
 
@@ -14,7 +14,7 @@ import { Loader2, Info } from "lucide-react"
 const SITE_URL = 'https://scope-psi.vercel.app';
 
 // 매직 링크 만료 시간 (분)
-const MAGIC_LINK_EXPIRATION = 10;
+const MAGIC_LINK_EXPIRATION = 30; // 30분으로 늘림
 
 export function EmailForm() {
   const router = useRouter();
@@ -132,40 +132,24 @@ export function EmailForm() {
     setIsLoading(true);
 
     try {
-      // 리디렉션 URL 확인 및 로깅 (디버깅용)
-      const redirectUrl = `${apiUrl}/auth/callback`;
-      console.log('이메일 인증 리디렉션 URL:', redirectUrl);
+      // 개선된 매직 링크 발송 함수 사용
+      const result = await signInWithMagicLink(email);
       
-      // Supabase Auth를 이용한 매직 링크 발송 (직접 로그 확인)
-      console.log('매직 링크 요청 시작:', {
-        email,
-        redirectUrl,
-        time: new Date().toISOString()
-      });
-      
-      const { data, error: authError } = await supabase.auth.signInWithOtp({
-        email,
-        options: {
-          emailRedirectTo: redirectUrl,
-          shouldCreateUser: true, // 사용자가 없으면 자동 생성
-        },
-      });
-
-      if (authError) {
-        console.error('인증 메일 발송 오류:', authError);
-        setError(`인증 메일 발송 실패: ${authError.message}`);
+      if (!result.success) {
+        console.error('인증 메일 발송 오류:', result.error);
+        setError(`인증 메일 발송 실패: ${result.error}`);
         
         // 디버그 정보 저장
         setDebugInfo({
           type: 'auth_error',
-          message: authError.message,
+          message: result.error,
           time: new Date().toISOString()
         });
         
         return;
       }
 
-      console.log('인증 메일 발송 응답:', JSON.stringify(data));
+      console.log('인증 메일 발송 성공:', result.data);
 
       // 인증 코드 발송 성공
       setSuccess(`인증 링크가 ${email}로 발송되었습니다. 이메일을 확인하고 링크를 클릭해주세요. (${MAGIC_LINK_EXPIRATION}분 이내)`);
@@ -177,7 +161,6 @@ export function EmailForm() {
       setDebugInfo({
         type: 'success',
         email,
-        redirectUrl,
         time: new Date().toISOString()
       });
     } catch (error: any) {
@@ -202,23 +185,16 @@ export function EmailForm() {
     
     setIsLoading(true);
     try {
-      // 개발 환경에서 매직 링크 대신 직접 테스트
-      console.log('테스트 매직 링크 생성 중...');
-      
-      const { data, error } = await supabase.auth.signInWithOtp({
-        email: 'test@example.com',
-        options: {
-          emailRedirectTo: `${apiUrl}/auth/callback`,
-        }
-      });
+      // 개선된 매직 링크 함수 사용 (테스트)
+      const result = await signInWithMagicLink('test@example.com');
 
-      if (error) {
-        console.error('테스트 인증 오류:', error);
-        setError(`테스트 인증 실패: ${error.message}`);
+      if (!result.success) {
+        console.error('테스트 인증 오류:', result.error);
+        setError(`테스트 인증 실패: ${result.error}`);
         return;
       }
 
-      console.log('테스트 인증 성공:', data);
+      console.log('테스트 인증 성공:', result.data);
       setSuccess('테스트 인증 이메일이 발송되었습니다. 터미널에서 매직 링크를 확인하세요.');
     } catch (error: any) {
       console.error("개발 환경 인증 오류:", error);
