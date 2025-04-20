@@ -72,7 +72,38 @@ export const signInWithMagicLink = async (email: string) => {
       time: new Date().toISOString()
     });
     
-    // 매직 링크 발송
+    // 이미 등록된 이메일인지 확인 (중요: 기존 사용자의 로그인 흐름 개선)
+    try {
+      // 데이터베이스에서 사용자 확인 시도
+      const { data: userData, error: userError } = await supabase
+        .from('users')
+        .select('id')
+        .eq('email', email)
+        .maybeSingle();
+      
+      // 기존 데이터베이스에 사용자가 있는 경우 특별 처리
+      if (userData?.id) {
+        console.log('기존 사용자 감지:', email);
+        
+        // 다른 방식으로 매직 링크 발송 (세션 재설정용)
+        const { data, error } = await supabase.auth.resetPasswordForEmail(email, {
+          redirectTo: redirectUrl
+        });
+        
+        if (error) throw error;
+        
+        return { 
+          success: true, 
+          data, 
+          message: '기존 사용자 인증 이메일 발송됨' 
+        };
+      }
+    } catch (checkError) {
+      console.log('사용자 확인 중 오류 (무시하고 계속):', checkError);
+      // 오류가 발생해도 계속 진행 (새 사용자로 처리)
+    }
+    
+    // 표준 OTP 매직 링크 발송 (새 사용자용)
     const { data, error } = await supabase.auth.signInWithOtp({
       email,
       options: {
@@ -96,6 +127,26 @@ export const signInWithMagicLink = async (email: string) => {
     return { 
       success: false, 
       error: error.message || '매직 링크 발송에 실패했습니다.'
+    };
+  }
+};
+
+// 비밀번호로 로그인
+export const signInWithPassword = async (email: string, password: string) => {
+  try {
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email,
+      password
+    });
+    
+    if (error) throw error;
+    
+    return { success: true, data };
+  } catch (error: any) {
+    console.error('비밀번호 로그인 오류:', error);
+    return { 
+      success: false, 
+      error: error.message || '로그인에 실패했습니다.'
     };
   }
 };

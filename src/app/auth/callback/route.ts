@@ -9,23 +9,36 @@ export async function GET(request: NextRequest) {
   const requestUrl = new URL(request.url);
   const code = requestUrl.searchParams.get('code');
   const error = requestUrl.searchParams.get('error');
+  const error_code = requestUrl.searchParams.get('error_code');
   const errorDescription = requestUrl.searchParams.get('error_description');
+  const type = requestUrl.searchParams.get('type'); // 링크 타입 확인 (reset_password 또는 없음)
   
-  console.log('코드 파라미터:', code ? '존재함' : '없음');
-  console.log('에러 파라미터:', error || '없음');
-  console.log('에러 설명:', errorDescription || '없음');
+  console.log('URL 파라미터:', {
+    code: code ? '존재함 (길이: ' + code.length + ')' : '없음',
+    error: error || '없음',
+    error_code: error_code || '없음',
+    error_description: errorDescription || '없음',
+    type: type || '일반 로그인',
+    queryParams: Object.fromEntries(Array.from(requestUrl.searchParams.entries()))
+  });
+  
+  // 해시 파라미터 확인 (페이지 URL의 # 뒤에 있는 파라미터)
+  if (request.url.includes('#')) {
+    console.log('해시 파라미터 감지됨:', request.url.split('#')[1]);
+  }
   
   // 오류 파라미터가 있으면 처리
   if (error) {
     console.error('Supabase 인증 오류:', error, errorDescription);
     return NextResponse.redirect(
-      new URL(`/login?error=${encodeURIComponent(error)}&error_description=${encodeURIComponent(errorDescription || '')}`, request.url)
+      new URL(`/login?error=${encodeURIComponent(error)}&error_code=${encodeURIComponent(error_code || '')}&error_description=${encodeURIComponent(errorDescription || '')}`, request.url)
     );
   }
 
   // code가 없으면 홈 페이지로 리디렉션
   if (!code) {
-    console.error('인증 코드가 없습니다.');
+    console.error('인증 코드가 없습니다. 해시 파라미터 확인 필요');
+    // URL에 해시(#)가 있는지 확인하고 해당 정보를 로그로 남김
     return NextResponse.redirect(new URL('/?error=no_code', request.url));
   }
 
@@ -45,57 +58,93 @@ export async function GET(request: NextRequest) {
       auth: {
         autoRefreshToken: true,
         persistSession: true,
-        detectSessionInUrl: true
+        detectSessionInUrl: true,
+        flowType: 'pkce'
       }
     });
 
     console.log('세션 교환 시도 중...');
     
-    // 인증 코드로 세션 교환
-    const { data, error } = await supabase.auth.exchangeCodeForSession(code);
+    // 인증 코드로 세션 교환 시도
+    try {
+      // 인증 코드로 세션 교환
+      const { data, error } = await supabase.auth.exchangeCodeForSession(code);
 
-    if (error) {
-      console.error('세션 교환 오류:', error.message);
-      // 오류 메시지와 함께 로그인 페이지로 리디렉션
-      return NextResponse.redirect(
-        new URL(`/login?error=${encodeURIComponent(error.message)}`, request.url)
-      );
-    }
+      if (error) {
+        console.error('세션 교환 오류:', error.message);
+        console.error('오류 세부 정보:', JSON.stringify(error, null, 2));
+        // 오류 메시지와 함께 로그인 페이지로 리디렉션
+        return NextResponse.redirect(
+          new URL(`/login?error=${encodeURIComponent(error.message)}&error_code=${encodeURIComponent(error_code || '')}&exchange_error=true`, request.url)
+        );
+      }
 
-    console.log('인증 성공:', data ? '데이터 있음' : '데이터 없음');
-    if (data?.session) {
-      console.log('사용자 정보:', data.session.user.email);
-      console.log('세션 만료:', new Date(data.session.expires_at! * 1000).toLocaleString());
-    }
-    
-    // 세션 정보가 있는지 확인
-    if (data?.session) {
-      // 비밀번호 설정 페이지로 리디렉션 (대시보드 대신)
-      const email = data.session.user.email;
+      console.log('인증 성공:', data ? '데이터 있음' : '데이터 없음');
+      if (data?.session) {
+        console.log('사용자 정보:', data.session.user.email);
+        console.log('세션 만료:', new Date(data.session.expires_at! * 1000).toLocaleString());
+        
+        // 사용자 메타데이터 확인
+        const userMetadata = data.session.user.user_metadata || {};
+        console.log('사용자 메타데이터:', userMetadata);
+        
+        // 비밀번호가 설정되어 있는지 확인
+        const hasPassword = !!(userMetadata.has_password || userMetadata.password_set || 
+                             (data.session.user.app_metadata && data.session.user.app_metadata.provider !== 'email'));
+        
+        console.log('비밀번호 설정 여부:', hasPassword ? '설정됨' : '미설정');
+      }
       
-      // 쿠키와 세션 스토리지에 이메일 저장 (비밀번호 설정 화면에서 사용)
-      const response = NextResponse.redirect(new URL('/set-password?auth_success=true', request.url));
-      
-      // 쿠키에 이메일 저장 (비밀번호 설정 화면에서 사용)
-      response.cookies.set('verify_email', email || '', {
-        path: '/',
-        maxAge: 60 * 15, // 15분
-        sameSite: 'lax'
-      });
-      
-      // 인증 테스트용 쿠키
-      response.cookies.set('auth_test', 'true', { 
-        path: '/',
-        maxAge: 60 * 60 * 24, // 24시간
-        sameSite: 'lax'
-      });
-      
-      console.log('비밀번호 설정 페이지로 리디렉션 중...');
-      return response;
-    } else {
-      console.error('세션 정보가 없습니다.');
+      // 세션 정보가 있는지 확인
+      if (data?.session) {
+        const email = data.session.user.email;
+        
+        // 링크 타입이 비밀번호 재설정이거나 기존 사용자인 경우 대시보드로 리디렉션
+        if (type === 'recovery' || type === 'reset_password') {
+          // 인증 쿠키 설정
+          const response = NextResponse.redirect(new URL('/dashboard?login_success=true', request.url));
+          
+          // 인증 테스트용 쿠키
+          response.cookies.set('auth_test', 'true', { 
+            path: '/',
+            maxAge: 60 * 60 * 24, // 24시간
+            sameSite: 'lax'
+          });
+          
+          console.log('기존 사용자: 대시보드로 리디렉션 중...');
+          return response;
+        } else {
+          // 신규 사용자는 비밀번호 설정 페이지로 리디렉션
+          const response = NextResponse.redirect(new URL('/set-password?auth_success=true', request.url));
+          
+          // 쿠키에 이메일 저장 (비밀번호 설정 화면에서 사용)
+          response.cookies.set('verify_email', email || '', {
+            path: '/',
+            maxAge: 60 * 15, // 15분
+            sameSite: 'lax'
+          });
+          
+          // 인증 테스트용 쿠키
+          response.cookies.set('auth_test', 'true', { 
+            path: '/',
+            maxAge: 60 * 60 * 24, // 24시간
+            sameSite: 'lax'
+          });
+          
+          console.log('신규 사용자: 비밀번호 설정 페이지로 리디렉션 중...');
+          return response;
+        }
+      } else {
+        console.error('세션 정보가 없습니다.');
+        return NextResponse.redirect(
+          new URL('/login?error=no_session_data', request.url)
+        );
+      }
+    } catch (exchangeError: any) {
+      console.error('세션 교환 중 예외 발생:', exchangeError.message);
+      console.error('예외 세부 정보:', JSON.stringify(exchangeError, null, 2));
       return NextResponse.redirect(
-        new URL('/login?error=no_session_data', request.url)
+        new URL(`/login?error=exchange_error&message=${encodeURIComponent(exchangeError.message || '세션 교환 중 오류 발생')}`, request.url)
       );
     }
   } catch (error: any) {
