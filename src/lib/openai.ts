@@ -1,9 +1,21 @@
 import OpenAI from 'openai';
 
-// OpenAI 클라이언트 초기화
+// API 키 확인 및 로깅 (개발 환경에서만)
+const apiKey = process.env.OPENAI_API_KEY;
+if (!apiKey) {
+  console.error('OPENAI_API_KEY environment variable is missing or empty');
+  if (typeof window !== 'undefined' && process.env.NODE_ENV !== 'production') {
+    console.log('Running in browser environment. Environment variables might not be accessible');
+  }
+}
+
+// OpenAI 인스턴스 생성
 const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
+  apiKey: apiKey,
+  dangerouslyAllowBrowser: true // 클라이언트 사이드에서도 실행 가능하도록 설정 (주의: 실제 프로덕션에서는 API 요청을 서버 사이드에서만 수행해야 함)
 });
+
+export default openai;
 
 /**
  * 뉴스 기사 내용을 요약하는 함수
@@ -196,5 +208,44 @@ export async function analyzeAttachmentText(extractedText: string): Promise<{
       keyPoints: [],
       categories: []
     };
+  }
+}
+
+// 모델 요약 함수
+export async function summarizeText(text: string, maxTokens: number = 300): Promise<string> {
+  try {
+    const response = await openai.chat.completions.create({
+      model: "gpt-3.5-turbo",
+      messages: [
+        { role: "system", content: "You are a helpful assistant that summarizes news articles concisely." },
+        { role: "user", content: `Summarize this text in Korean: ${text}` }
+      ],
+      max_tokens: maxTokens,
+    });
+
+    return response.choices[0]?.message?.content || "요약을 생성할 수 없습니다.";
+  } catch (error) {
+    console.error("OpenAI API 오류:", error);
+    return "요약 중 오류가 발생했습니다.";
+  }
+}
+
+// 태그 생성 함수 
+export async function generateTags(text: string, maxTags: number = 5): Promise<string[]> {
+  try {
+    const response = await openai.chat.completions.create({
+      model: "gpt-3.5-turbo",
+      messages: [
+        { role: "system", content: "You are a helpful assistant that extracts relevant tags from news articles." },
+        { role: "user", content: `Extract ${maxTags} most important keywords or tags from this text in Korean. Return only the tags as a comma-separated list, no numbering or explanation: ${text}` }
+      ],
+      max_tokens: 100,
+    });
+
+    const tagsText = response.choices[0]?.message?.content || "";
+    return tagsText.split(',').map(tag => tag.trim()).filter(tag => tag.length > 0);
+  } catch (error) {
+    console.error("OpenAI API 태그 생성 오류:", error);
+    return ["오류", "태그 생성 실패"];
   }
 } 
