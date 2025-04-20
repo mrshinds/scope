@@ -29,6 +29,25 @@ const extractCodeFromURL = (url: string): string | null => {
   }
 };
 
+// 해시에서 오류 정보 추출
+const extractErrorFromHash = (url: string): { error?: string, error_code?: string, error_description?: string } => {
+  try {
+    if (!url.includes('#')) return {};
+    
+    const hashPart = url.split('#')[1];
+    const params = new URLSearchParams(hashPart);
+    
+    return {
+      error: params.get('error') || undefined,
+      error_code: params.get('error_code') || undefined,
+      error_description: params.get('error_description') || undefined
+    };
+  } catch (e) {
+    console.error('해시에서 오류 정보 추출 실패:', e);
+    return {};
+  }
+};
+
 export async function GET(request: NextRequest) {
   // 디버깅을 위한 요청 정보 로깅
   console.log('=== 인증 콜백 핸들러 호출됨 ===');
@@ -36,15 +55,38 @@ export async function GET(request: NextRequest) {
   
   const requestUrl = new URL(request.url);
   let code = requestUrl.searchParams.get('code');
-  const error = requestUrl.searchParams.get('error');
-  const error_code = requestUrl.searchParams.get('error_code');
-  const errorDescription = requestUrl.searchParams.get('error_description');
+  let error = requestUrl.searchParams.get('error');
+  let error_code = requestUrl.searchParams.get('error_code');
+  let errorDescription = requestUrl.searchParams.get('error_description');
   const type = requestUrl.searchParams.get('type'); // 링크 타입 확인 (reset_password 또는 없음)
   
   // URL 전체에서 코드 추출 시도 (해시 포함)
   if (!code && request.url.includes('#')) {
     code = extractCodeFromURL(request.url);
     console.log('해시에서 코드 추출 시도:', code ? '성공' : '실패');
+  }
+  
+  // 해시에서 오류 정보 추출 시도
+  if (request.url.includes('#')) {
+    const hashErrors = extractErrorFromHash(request.url);
+    if (hashErrors.error) {
+      console.log('해시에서 오류 정보 추출:', hashErrors);
+      error = hashErrors.error || error;
+      error_code = hashErrors.error_code || error_code;
+      errorDescription = hashErrors.error_description || errorDescription;
+    }
+  }
+  
+  // 만료된 링크 오류 특별 처리
+  const isExpiredLink = error === 'access_denied' && 
+                       (error_code === 'otp_expired' || 
+                        (errorDescription && errorDescription.toLowerCase().includes('expired')));
+  
+  if (isExpiredLink) {
+    console.log('만료된 인증 링크 감지됨');
+    return NextResponse.redirect(
+      new URL('/login?error=link_expired&message=인증+링크가+만료되었습니다.+새+링크를+요청해주세요.', request.url)
+    );
   }
   
   console.log('URL 파라미터:', {
@@ -73,6 +115,14 @@ export async function GET(request: NextRequest) {
   // 오류 파라미터가 있으면 처리
   if (error) {
     console.error('Supabase 인증 오류:', error, errorDescription);
+    
+    // 링크 만료 오류인 경우 특별 메시지
+    if (error === 'access_denied' && errorDescription && errorDescription.toLowerCase().includes('expired')) {
+      return NextResponse.redirect(
+        new URL('/login?error=link_expired&message=인증+링크가+만료되었습니다.+새+링크를+요청해주세요.', request.url)
+      );
+    }
+    
     return NextResponse.redirect(
       new URL(`/login?error=${encodeURIComponent(error)}&error_code=${encodeURIComponent(error_code || '')}&error_description=${encodeURIComponent(errorDescription || '')}&email_tampered=${isTamperedURL ? 'true' : 'false'}`, request.url)
     );

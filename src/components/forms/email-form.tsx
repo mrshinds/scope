@@ -42,7 +42,24 @@ export function EmailForm() {
       const errorMessage = searchParams.get('message') || searchParams.get('error_description');
       
       if (errorParam) {
-        setError(`인증 오류: ${errorParam}${errorMessage ? ` - ${errorMessage}` : ''}`);
+        let errorText = '';
+        
+        // 오류 유형에 따른 메시지 설정
+        if (errorParam === 'link_expired' || errorParam === 'otp_expired') {
+          errorText = '인증 링크가 만료되었습니다. 아래에서 새 링크를 요청해주세요.';
+        } else if (errorParam === 'code_verifier_error' || errorParam === 'invalid_link') {
+          errorText = '이메일 링크가 손상되었습니다. 이메일 프로그램의 보안 검사로 인해 발생한 문제일 수 있습니다. 새 인증 링크를 요청해주세요.';
+          
+          if (errorMessage && errorMessage.length > 10) {
+            errorText += `\n\n상세: ${errorMessage}`;
+          }
+          
+          errorText += '\n\n신한 메일 사용자는 원본 반입 후 링크를 클릭해주세요.';
+        } else {
+          errorText = `인증 오류: ${errorParam}${errorMessage ? ` - ${errorMessage}` : ''}`;
+        }
+        
+        setError(errorText);
         
         // 디버그 정보 저장
         setDebugInfo({
