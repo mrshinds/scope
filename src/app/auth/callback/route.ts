@@ -88,6 +88,7 @@ export async function GET(request: NextRequest) {
   
   const requestUrl = new URL(request.url);
   let code = requestUrl.searchParams.get('code');
+  let codeVerifier = requestUrl.searchParams.get('code_verifier');
   let error = requestUrl.searchParams.get('error');
   let error_code = requestUrl.searchParams.get('error_code');
   let errorDescription = requestUrl.searchParams.get('error_description');
@@ -254,12 +255,11 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  // code가 없으면 홈 페이지로 리디렉션
-  if (!code) {
-    console.error('인증 코드가 없습니다. 해시 파라미터 확인 필요');
-    // URL에 해시(#)가 있는지 확인하고 해당 정보를 로그로 남김
+  // code와 code_verifier가 모두 있는지 확인
+  if (!code || !codeVerifier) {
+    console.error('인증 코드 또는 코드 검증기가 누락되었습니다.');
     return NextResponse.redirect(
-      new URL(`/?error=no_code&email_tampered=${isTamperedURL ? 'true' : 'false'}`, request.url)
+      new URL('/login?error=missing_code_or_verifier&message=인증+코드+또는+코드+검증기가+누락되었습니다.', request.url)
     );
   }
 

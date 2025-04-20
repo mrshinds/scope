@@ -4,7 +4,7 @@
   "description": "신한은행 소비자보호부 내부 직원용 이슈 감지 플랫폼",
   "main": "index.js",
   "scripts": {
-    "dev": "next dev",
+    "dev": "next dev -p 3001",
     "build": "next build",
     "start": "next start",
     "lint": "next lint"
