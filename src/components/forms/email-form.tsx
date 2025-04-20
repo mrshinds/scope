@@ -113,71 +113,59 @@ export function EmailForm() {
     console.log('사이트 URL 설정:', baseUrl);
   }, []);
 
-  async function handleSubmit(e: FormEvent) {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError("");
-    setSuccess("");
-    setDebugInfo(null);
-
-    if (!email) {
-      setError("이메일을 입력해주세요.");
-      return;
-    }
-
-    if (!isValidEmail(email)) {
-      setError("유효한 이메일 주소를 입력해주세요.");
-      return;
-    }
-
     setIsLoading(true);
-
+    setError("");
+    
     try {
-      // 개선된 매직 링크 발송 함수 사용
-      const result = await signInWithMagicLink(email);
+      // 환경 변수 확인
+      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+      const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || window.location.origin;
       
-      if (!result.success) {
-        console.error('인증 메일 발송 오류:', result.error);
-        setError(`인증 메일 발송 실패: ${result.error}`);
-        
-        // 디버그 정보 저장
-        setDebugInfo({
-          type: 'auth_error',
-          message: result.error,
-          time: new Date().toISOString()
-        });
-        
+      console.log('환경 설정:', {
+        supabaseUrl: supabaseUrl ? '설정됨' : '미설정',
+        siteUrl,
+        nodeEnv: process.env.NODE_ENV,
+        vercelEnv: process.env.NEXT_PUBLIC_VERCEL_ENV
+      });
+      
+      if (!supabaseUrl) {
+        console.error('Supabase URL이 설정되지 않았습니다.');
+        setError('서버 설정 오류가 발생했습니다. 관리자에게 문의하세요.');
+        setIsLoading(false);
+        return;
+      }
+      
+      // 이메일 검증
+      if (!isValidEmail(email)) {
+        setError('유효한 이메일 주소를 입력해 주세요.');
+        setIsLoading(false);
         return;
       }
 
-      console.log('인증 메일 발송 성공:', result.data);
-
-      // 인증 코드 발송 성공
-      setSuccess(`인증 링크가 ${email}로 발송되었습니다. 이메일을 확인하고 링크를 클릭해주세요. (${MAGIC_LINK_EXPIRATION}분 이내)`);
+      const result = await signInWithMagicLink(email);
       
-      // 이메일 세션 저장
-      sessionStorage.setItem("pendingAuthEmail", email);
-      
-      // 디버그 정보 저장
-      setDebugInfo({
-        type: 'success',
-        email,
-        time: new Date().toISOString()
-      });
+      if (result.success) {
+        setSuccess(`인증 링크가 ${email}로 발송되었습니다. 이메일을 확인하고 링크를 클릭해주세요. (${MAGIC_LINK_EXPIRATION}분 이내)`);
+        
+        // 디버깅 정보 표시
+        console.log('이메일 인증 요청 성공:', {
+          email,
+          timestamp: new Date().toISOString(),
+          redirectUrl: `${siteUrl}/auth/callback`
+        });
+      } else {
+        console.error('인증 이메일 발송 실패:', result.error);
+        setError('인증 이메일을 발송하는 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.');
+      }
     } catch (error: any) {
-      console.error("이메일 인증 처리 오류:", error);
-      setError("인증 메일 발송 중 오류가 발생했습니다. 다시 시도해주세요.");
-      
-      // 디버그 정보 저장
-      setDebugInfo({
-        type: 'exception',
-        message: error.message,
-        stack: error.stack,
-        time: new Date().toISOString()
-      });
+      console.error('인증 처리 중 예외 발생:', error);
+      setError(`인증 처리 중 오류가 발생했습니다: ${error.message || '알 수 없는 오류'}`);
     } finally {
       setIsLoading(false);
     }
-  }
+  };
 
   // 개발 환경에서 테스트 인증 처리
   const handleDevAuth = async () => {
