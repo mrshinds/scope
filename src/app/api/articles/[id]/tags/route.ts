@@ -109,9 +109,9 @@ export async function POST(
 // 태그 삭제
 export async function DELETE(
   request: Request,
-  { params }: { params: { id: string } }
+  { params }: any
 ) {
-  const id = params.id;
+  const { id } = params;
 
   if (!id) {
     return NextResponse.json(
