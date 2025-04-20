@@ -70,15 +70,27 @@ export async function GET(request: NextRequest) {
     
     // 세션 정보가 있는지 확인
     if (data?.session) {
-      // 세션 확인을 위한 테스트 쿠키 설정
-      const response = NextResponse.redirect(new URL('/dashboard?login_success=true', request.url));
+      // 비밀번호 설정 페이지로 리디렉션 (대시보드 대신)
+      const email = data.session.user.email;
+      
+      // 쿠키와 세션 스토리지에 이메일 저장 (비밀번호 설정 화면에서 사용)
+      const response = NextResponse.redirect(new URL('/set-password?auth_success=true', request.url));
+      
+      // 쿠키에 이메일 저장 (비밀번호 설정 화면에서 사용)
+      response.cookies.set('verify_email', email || '', {
+        path: '/',
+        maxAge: 60 * 15, // 15분
+        sameSite: 'lax'
+      });
+      
+      // 인증 테스트용 쿠키
       response.cookies.set('auth_test', 'true', { 
         path: '/',
         maxAge: 60 * 60 * 24, // 24시간
         sameSite: 'lax'
       });
       
-      console.log('대시보드로 리디렉션 중...');
+      console.log('비밀번호 설정 페이지로 리디렉션 중...');
       return response;
     } else {
       console.error('세션 정보가 없습니다.');
