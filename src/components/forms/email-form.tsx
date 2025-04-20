@@ -1,6 +1,6 @@
 'use client';
 
-import { FormEvent, useState } from "react"
+import { FormEvent, useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -10,12 +10,27 @@ import { supabase } from "@/lib/supabase"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Loader2 } from "lucide-react"
 
+// 배포 URL 설정 (배포 환경에서는 이 값으로 수정필요)
+const SITE_URL = 'https://scope-psi.vercel.app';
+
 export function EmailForm() {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [apiUrl, setApiUrl] = useState("");
+
+  // 컴포넌트 마운트시 API URL 결정
+  useEffect(() => {
+    // 개발 환경에서는 window.location.origin 사용, 배포 환경에서는 SITE_URL 사용
+    const baseUrl = process.env.NODE_ENV === 'production'
+      ? SITE_URL
+      : window.location.origin;
+    
+    setApiUrl(baseUrl);
+    console.log('사이트 URL 설정:', baseUrl);
+  }, []);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -35,11 +50,15 @@ export function EmailForm() {
     setIsLoading(true);
 
     try {
+      // 리디렉션 URL 확인 및 로깅 (디버깅용)
+      const redirectUrl = `${apiUrl}/auth/callback`;
+      console.log('이메일 인증 리디렉션 URL:', redirectUrl);
+      
       // Supabase Auth를 이용한 이메일 인증 코드 발송
       const { data, error: authError } = await supabase.auth.signInWithOtp({
         email,
         options: {
-          emailRedirectTo: `${window.location.origin}/verify`,
+          emailRedirectTo: redirectUrl,
         },
       });
 
