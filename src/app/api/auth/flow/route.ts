@@ -36,7 +36,7 @@ export async function POST(request: NextRequest) {
         autoRefreshToken: true,
         persistSession: true,
         detectSessionInUrl: false,
-        flowType: 'implicit' // code verifier 문제 해결을 위해 implicit 플로우 사용
+        flowType: 'pkce' // implicit -> pkce로 변경 (더 안전한 방식)
       }
     });
     
@@ -71,10 +71,15 @@ export async function POST(request: NextRequest) {
           );
         }
         
+        // 링크 만료 시간 정보 추가
         return NextResponse.json({
           success: true,
           message: '기존 사용자용 인증 이메일이 발송되었습니다.',
-          isShinhanMail
+          isShinhanMail,
+          expiresIn: '30분',
+          flowType: 'pkce',
+          timestamp: new Date().toISOString(),
+          redirectUrl
         });
       }
     } catch (error) {
@@ -82,7 +87,7 @@ export async function POST(request: NextRequest) {
       // 에러가 발생해도 계속 진행
     }
     
-    // 새 사용자 - OTP 이메일 발송
+    // 신규 사용자 - OTP 이메일 발송
     try {
       const { data, error } = await supabase.auth.signInWithOtp({
         email,
@@ -90,8 +95,9 @@ export async function POST(request: NextRequest) {
           emailRedirectTo: redirectUrl,
           shouldCreateUser: true,
           data: {
-            auth_flow: 'implicit',
-            is_shinhan_mail: isShinhanMail
+            auth_flow: 'pkce', // implicit -> pkce로 변경
+            is_shinhan_mail: isShinhanMail,
+            timestamp: new Date().toISOString()
           }
         }
       });
@@ -104,11 +110,15 @@ export async function POST(request: NextRequest) {
         );
       }
       
+      // 성공 응답에 추가 정보 포함
       return NextResponse.json({
         success: true,
         message: '인증 이메일이 발송되었습니다.',
         isShinhanMail,
-        flowType: 'implicit'
+        flowType: 'pkce',
+        expiresIn: '30분',
+        timestamp: new Date().toISOString(),
+        redirectUrl
       });
     } catch (error: any) {
       console.error('인증 처리 중 예외 발생:', error);

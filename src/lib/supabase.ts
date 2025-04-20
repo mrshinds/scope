@@ -35,7 +35,7 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     autoRefreshToken: true,
     persistSession: true,
     detectSessionInUrl: true,
-    flowType: 'implicit',
+    flowType: 'pkce',
     // Supabase v2에서는 cookieOptions가 지원되지 않습니다.
     // 대신 localStorage에 세션을 유지합니다.
     storage: {
@@ -70,7 +70,7 @@ export const signInWithMagicLink = async (email: string) => {
       email,
       redirectUrl,
       time: new Date().toISOString(),
-      authFlow: 'implicit',
+      authFlow: 'pkce',
       isShinhanMail: email.toLowerCase().includes('@shinhan.com')
     });
     
@@ -119,7 +119,7 @@ export const signInWithMagicLink = async (email: string) => {
         data: {
           app_metadata: {
             provider: 'email',
-            auth_flow: 'implicit',
+            auth_flow: 'pkce',
             created_at: new Date().toISOString(),
             is_shinhan_mail: isShinhanMail
           }

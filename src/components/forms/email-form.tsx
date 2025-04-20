@@ -129,6 +129,19 @@ export function EmailForm() {
     
     setApiUrl(baseUrl);
     console.log('사이트 URL 설정:', baseUrl);
+    
+    // 주소창의 파라미터 확인 및 직접 진단 정보 표시
+    const debugInformation = {
+      environment: process.env.NODE_ENV,
+      browserURL: window.location.href,
+      currentTime: new Date().toISOString(),
+      siteUrl: baseUrl,
+      supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL,
+      searchParams: Object.fromEntries(new URLSearchParams(window.location.search).entries())
+    };
+    
+    console.log('매직 링크 디버그 정보:', debugInformation);
+    setDebugInfo(debugInformation);
   }, []);
 
   // 신한 메일 전용 대체 인증 플로우 사용
@@ -175,7 +188,9 @@ export function EmailForm() {
         supabaseUrl: supabaseUrl ? '설정됨' : '미설정',
         siteUrl,
         nodeEnv: process.env.NODE_ENV,
-        vercelEnv: process.env.NEXT_PUBLIC_VERCEL_ENV
+        vercelEnv: process.env.NEXT_PUBLIC_VERCEL_ENV,
+        redirectUrl: `${siteUrl}/auth/callback`,
+        flowType: 'pkce', // 인증 플로우 타입 표시
       });
       
       if (!supabaseUrl) {
