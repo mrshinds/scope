@@ -8,10 +8,13 @@ import { isValidEmail } from "@/lib/utils"
 import { Label } from "@/components/ui/label"
 import { supabase } from "@/lib/supabase"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { Loader2 } from "lucide-react"
+import { Loader2, Info } from "lucide-react"
 
 // 배포 URL 설정 (배포 환경에서는 이 값으로 수정필요)
 const SITE_URL = 'https://scope-psi.vercel.app';
+
+// 매직 링크 만료 시간 (분)
+const MAGIC_LINK_EXPIRATION = 10;
 
 export function EmailForm() {
   const router = useRouter();
@@ -71,7 +74,14 @@ export function EmailForm() {
       
       if (error) {
         console.error('세션 교환 오류:', error);
-        setError(`인증 오류: ${error.message}`);
+        
+        // 오류 특성에 따라 다른 메시지 표시
+        if (error.message.includes('expired')) {
+          setError(`인증 링크가 만료되었습니다. 새 링크를 요청해주세요. (유효 시간: ${MAGIC_LINK_EXPIRATION}분)`);
+        } else {
+          setError(`인증 오류: ${error.message}`);
+        }
+        
         setIsLoading(false);
         return;
       }
@@ -158,7 +168,7 @@ export function EmailForm() {
       console.log('인증 메일 발송 응답:', JSON.stringify(data));
 
       // 인증 코드 발송 성공
-      setSuccess(`인증 링크가 ${email}로 발송되었습니다. 이메일을 확인하고 링크를 클릭해주세요.`);
+      setSuccess(`인증 링크가 ${email}로 발송되었습니다. 이메일을 확인하고 링크를 클릭해주세요. (${MAGIC_LINK_EXPIRATION}분 이내)`);
       
       // 이메일 세션 저장
       sessionStorage.setItem("pendingAuthEmail", email);
@@ -250,6 +260,15 @@ export function EmailForm() {
           <AlertDescription>{success}</AlertDescription>
         </Alert>
       )}
+      
+      {/* 인증 링크 만료 시간 안내 */}
+      <div className="text-xs text-muted-foreground flex items-start gap-2">
+        <Info className="h-4 w-4 mt-0.5 shrink-0" />
+        <span>
+          인증 링크는 보안을 위해 발송 후 {MAGIC_LINK_EXPIRATION}분 동안만 유효합니다. 
+          시간이 경과한 경우 새 링크를 요청해주세요.
+        </span>
+      </div>
       
       {/* 디버그 정보 표시 (개발 모드에서만) */}
       {debugInfo && process.env.NODE_ENV !== 'production' && (

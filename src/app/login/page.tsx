@@ -1,15 +1,76 @@
+'use client';
+
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card"
 import { EmailForm } from "@/components/forms/email-form"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { UserLoginForm } from "@/components/forms/user-login-form"
 import { Separator } from "@/components/ui/separator"
 import { Alert, AlertDescription } from "@/components/ui/alert"
+import { useEffect, useState } from "react"
+import { useSearchParams } from "next/navigation"
 
 export default function LoginPage({ 
   searchParams,
 }: {
   searchParams?: { [key: string]: string | string[] | undefined }
 }) {
+  const clientSearchParams = useSearchParams();
+  const [error, setError] = useState<string | null>(null);
+  const [errorDescription, setErrorDescription] = useState<string | null>(null);
+  
+  // URL 해시에서 오류 확인 (client-side에서만 가능)
+  useEffect(() => {
+    // URL 해시에서 오류 정보 추출
+    const hashError = window.location.hash.includes('error=');
+    
+    if (hashError) {
+      try {
+        // 해시에서 오류 정보 파싱
+        const hashParams = new URLSearchParams(
+          window.location.hash.substring(1) // # 기호 제거
+        );
+        
+        const hashErrorType = hashParams.get('error');
+        const hashErrorCode = hashParams.get('error_code');
+        const hashErrorDesc = hashParams.get('error_description');
+        
+        // 오류 정보 설정 (hash 오류 우선)
+        if (hashErrorType) {
+          if (hashErrorType === 'access_denied' && hashErrorCode === 'otp_expired') {
+            setError('매직 링크가 만료되었습니다');
+            setErrorDescription('보안을 위해 인증 링크는 10분 동안만 유효합니다. 로그인 페이지에서 새 링크를 요청해주세요.');
+          } else {
+            setError(hashErrorType);
+            setErrorDescription(hashErrorDesc || '오류가 발생했습니다. 다시 시도해주세요.');
+          }
+        }
+        
+        // 해시 제거 (오류 처리 후)
+        window.history.replaceState(
+          null, 
+          document.title, 
+          window.location.pathname + window.location.search
+        );
+      } catch (e) {
+        console.error('URL 해시 파싱 오류:', e);
+      }
+    }
+    
+    // URL 쿼리 파라미터에서 오류 정보 확인 (hash 없을 경우)
+    if (!error && clientSearchParams) {
+      const queryError = clientSearchParams.get('error');
+      const queryErrorDesc = clientSearchParams.get('error_description');
+      
+      if (queryError === 'no_code') {
+        setError('인증 코드가 없습니다');
+        setErrorDescription('유효하지 않은 링크입니다. 로그인 페이지에서 새 링크를 요청해주세요.');
+      } else if (queryError) {
+        setError(queryError);
+        setErrorDescription(queryErrorDesc || '오류가 발생했습니다. 다시 시도해주세요.');
+      }
+    }
+  }, [clientSearchParams]);
+  
   // URL에서 auth.url 파라미터 확인
   const hasAuthUrl = searchParams && 'auth.url' in searchParams;
   const authMessage = hasAuthUrl 
@@ -34,6 +95,17 @@ export default function LoginPage({
             <div className="px-6 pb-2">
               <Alert className="bg-blue-50 text-blue-800 border-blue-200">
                 <AlertDescription>{authMessage}</AlertDescription>
+              </Alert>
+            </div>
+          )}
+          
+          {error && (
+            <div className="px-6 pb-2">
+              <Alert variant="destructive">
+                <AlertDescription>
+                  <strong>{error}</strong>
+                  {errorDescription && <p className="text-sm mt-1">{errorDescription}</p>}
+                </AlertDescription>
               </Alert>
             </div>
           )}
