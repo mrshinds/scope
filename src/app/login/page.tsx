@@ -3,8 +3,19 @@ import { EmailForm } from "@/components/forms/email-form"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { UserLoginForm } from "@/components/forms/user-login-form"
 import { Separator } from "@/components/ui/separator"
+import { Alert, AlertDescription } from "@/components/ui/alert"
 
-export default function LoginPage() {
+export default function LoginPage({ 
+  searchParams,
+}: {
+  searchParams?: { [key: string]: string | string[] | undefined }
+}) {
+  // URL에서 auth.url 파라미터 확인
+  const hasAuthUrl = searchParams && 'auth.url' in searchParams;
+  const authMessage = hasAuthUrl 
+    ? "인증 링크를 처리하고 있습니다. 자동으로 비밀번호 설정 페이지로 이동합니다." 
+    : null;
+
   return (
     <div className="flex items-center justify-center min-h-screen bg-shinhan-gray">
       <div className="w-full max-w-md p-4">
@@ -18,6 +29,14 @@ export default function LoginPage() {
               신한은행 소비자보호부 이슈 감지 플랫폼
             </CardDescription>
           </CardHeader>
+          
+          {authMessage && (
+            <div className="px-6 pb-2">
+              <Alert className="bg-blue-50 text-blue-800 border-blue-200">
+                <AlertDescription>{authMessage}</AlertDescription>
+              </Alert>
+            </div>
+          )}
           
           <Tabs defaultValue="new" className="w-full">
             <div className="px-6">

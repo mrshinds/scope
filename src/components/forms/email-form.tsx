@@ -23,9 +23,17 @@ export function EmailForm() {
   const [apiUrl, setApiUrl] = useState("");
   const [debugInfo, setDebugInfo] = useState<any>(null);
 
-  // URL 파라미터에서 오류 메시지 확인
+  // URL 파라미터에서 오류 메시지 확인 및 auth.url 파라미터 확인
   useEffect(() => {
     if (searchParams) {
+      // URL에서 auth.url 파라미터 확인
+      const authUrl = searchParams.get('auth.url');
+      if (authUrl) {
+        console.log('인증 URL 감지:', authUrl);
+        handleAuthUrl(authUrl);
+      }
+      
+      // 에러 메시지 확인
       const errorParam = searchParams.get('error');
       const errorMessage = searchParams.get('message') || searchParams.get('error_description');
       
@@ -41,6 +49,48 @@ export function EmailForm() {
       }
     }
   }, [searchParams]);
+
+  // auth.url 파라미터 처리 함수
+  const handleAuthUrl = async (authUrl: string) => {
+    try {
+      console.log('인증 URL 처리 중:', authUrl);
+      // URL에서 code 파라미터 추출
+      const url = new URL(authUrl);
+      const code = url.searchParams.get('code');
+      
+      if (!code) {
+        console.error('인증 URL에 코드 파라미터가 없습니다.');
+        setError('인증 URL이 유효하지 않습니다.');
+        return;
+      }
+      
+      setIsLoading(true);
+      
+      // Supabase를 통해 코드 교환
+      const { data, error } = await supabase.auth.exchangeCodeForSession(code);
+      
+      if (error) {
+        console.error('세션 교환 오류:', error);
+        setError(`인증 오류: ${error.message}`);
+        setIsLoading(false);
+        return;
+      }
+      
+      if (data?.session) {
+        console.log('세션 교환 성공:', data.session.user.email);
+        // 세션 저장 및 비밀번호 설정 페이지로 이동
+        sessionStorage.setItem('pendingAuthEmail', data.session.user.email || '');
+        router.push('/set-password?auth_success=true');
+      } else {
+        setError('세션 데이터를 받지 못했습니다.');
+        setIsLoading(false);
+      }
+    } catch (err: any) {
+      console.error('인증 URL 처리 오류:', err);
+      setError(`인증 처리 중 오류 발생: ${err.message}`);
+      setIsLoading(false);
+    }
+  };
 
   // 컴포넌트 마운트시 API URL 결정
   useEffect(() => {
@@ -108,7 +158,7 @@ export function EmailForm() {
       console.log('인증 메일 발송 응답:', JSON.stringify(data));
 
       // 인증 코드 발송 성공
-      setSuccess("인증 링크가 이메일로 발송되었습니다. 이메일을 확인하고 'Log In' 링크를 클릭해주세요.");
+      setSuccess(`인증 링크가 ${email}로 발송되었습니다. 이메일을 확인하고 링크를 클릭해주세요.`);
       
       // 이메일 세션 저장
       sessionStorage.setItem("pendingAuthEmail", email);
