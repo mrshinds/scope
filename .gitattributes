@@ -1,0 +1,6 @@
+# .env 파일에 필터 적용
+.env* filter=env-secrets
+
+# 민감한 파일 속성 설정
+*.env diff=env
+*.env.* diff=env 
