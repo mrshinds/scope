@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useSearchParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { 
   Card, 
@@ -16,7 +16,8 @@ import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Input } from '@/components/ui/input';
-import { Search, Filter, Loader2, CalendarIcon, ExternalLink } from 'lucide-react';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Search, Filter, Loader2, CalendarIcon, ExternalLink, LogOut } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 import { ko } from 'date-fns/locale';
 import ArticleCard from '@/components/article-card';
@@ -24,8 +25,10 @@ import { supabase } from '@/lib/supabase';
 import { DashboardLayout } from '@/components/layout/dashboard-layout';
 
 export default function DashboardPage() {
+  const router = useRouter();
   const searchParams = useSearchParams();
-  const tagFilter = searchParams.get('tag');
+  const tagFilter = searchParams ? searchParams.get('tag') : null;
+  const loginSuccess = searchParams ? searchParams.get('login_success') === 'true' : false;
   
   const [articles, setArticles] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -33,6 +36,65 @@ export default function DashboardPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [activeTab, setActiveTab] = useState('all');
   const [tags, setTags] = useState<string[]>([]);
+  const [user, setUser] = useState<any>(null);
+  const [showLoginSuccess, setShowLoginSuccess] = useState(loginSuccess);
+
+  // 인증 세션 확인
+  useEffect(() => {
+    const checkSession = async () => {
+      try {
+        const { data: { session }, error } = await supabase.auth.getSession();
+        
+        if (error) {
+          console.error('세션 확인 오류:', error);
+          return;
+        }
+
+        if (!session) {
+          console.warn('인증된 세션이 없습니다. 로그인 페이지로 이동합니다.');
+          router.push('/login');
+          return;
+        }
+
+        setUser(session.user);
+        console.log('인증된 사용자:', session.user.email);
+      } catch (error) {
+        console.error('세션 확인 중 오류 발생:', error);
+      }
+    };
+
+    checkSession();
+  }, [router]);
+
+  // 로그인 성공 메시지 표시 후 자동으로 숨김
+  useEffect(() => {
+    if (showLoginSuccess) {
+      const timer = setTimeout(() => {
+        setShowLoginSuccess(false);
+        // URL에서 login_success 파라미터 제거
+        const newUrl = window.location.pathname;
+        window.history.replaceState({}, '', newUrl);
+      }, 5000);
+
+      return () => clearTimeout(timer);
+    }
+  }, [showLoginSuccess]);
+
+  // 로그아웃 함수
+  const handleLogout = async () => {
+    try {
+      const { error } = await supabase.auth.signOut();
+      if (error) {
+        console.error('로그아웃 오류:', error);
+        return;
+      }
+
+      // 로그아웃 성공 시 로그인 페이지로 이동
+      router.push('/login');
+    } catch (error) {
+      console.error('로그아웃 처리 중 오류:', error);
+    }
+  };
 
   // 테스트 데이터
   const sampleArticles = [
@@ -254,6 +316,26 @@ export default function DashboardPage() {
 
   return (
     <DashboardLayout>
+      {/* 로그인 성공 알림 */}
+      {showLoginSuccess && (
+        <Alert className="mb-4 bg-green-50 text-green-800 border-green-200">
+          <AlertDescription>로그인에 성공했습니다.</AlertDescription>
+        </Alert>
+      )}
+
+      {/* 사용자 정보 표시 */}
+      {user && (
+        <div className="mb-4 flex justify-between items-center">
+          <div className="text-sm text-gray-600">
+            <span className="font-medium">{user.email}</span>님 환영합니다
+          </div>
+          <Button variant="outline" size="sm" onClick={handleLogout}>
+            <LogOut className="h-4 w-4 mr-2" />
+            로그아웃
+          </Button>
+        </div>
+      )}
+
       <div className="space-y-4">
         <div className="flex flex-col md:flex-row justify-between gap-4">
           <div>
