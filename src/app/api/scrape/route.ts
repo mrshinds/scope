@@ -5,6 +5,7 @@ import OpenAI from 'openai';
 
 // 환경 변수에서 API 키 가져오기
 const apiKey = process.env.OPENAI_API_KEY;
+const isDevelopment = process.env.NODE_ENV === 'development';
 
 /**
  * 보도자료 스크래핑 및 저장 API
@@ -15,13 +16,19 @@ export async function POST(req: NextRequest) {
   try {
     // API 키 확인
     if (!apiKey) {
-      console.warn("OPENAI_API_KEY 환경 변수가 설정되지 않았습니다. 테스트 모드로 실행합니다.");
-      return NextResponse.json({ error: "테스트 모드로 실행합니다." });
+      if (isDevelopment) {
+        console.warn("⚠️ OPENAI_API_KEY 환경 변수가 설정되지 않았습니다. 테스트 모드로 실행합니다.");
+        // 개발 환경에서는 계속 진행
+      } else {
+        // 프로덕션 환경에서는 오류 응답
+        console.error("OPENAI_API_KEY가 설정되지 않아 요청을 처리할 수 없습니다.");
+        return NextResponse.json({ error: "API 키가 설정되지 않았습니다." }, { status: 500 });
+      }
     }
 
-    // OpenAI 클라이언트 초기화
+    // OpenAI 클라이언트 초기화 (API 키가 없는 경우 더미 키 사용)
     const openai = new OpenAI({
-      apiKey: apiKey
+      apiKey: apiKey || 'dummy-key-for-development'
     });
 
     // 필요한 경우 인증 체크

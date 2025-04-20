@@ -1,21 +1,40 @@
 import OpenAI from 'openai';
 
-// API 키 확인 및 로깅 (개발 환경에서만)
+// API 키 확인 및 로깅
 const apiKey = process.env.OPENAI_API_KEY;
+const isDevelopment = process.env.NODE_ENV === 'development';
+
 if (!apiKey) {
-  console.error('OPENAI_API_KEY environment variable is missing or empty');
-  if (typeof window !== 'undefined' && process.env.NODE_ENV !== 'production') {
+  if (isDevelopment) {
+    console.error('⚠️ OPENAI_API_KEY 환경 변수가 설정되지 않았습니다.');
+    console.error('1. .env 파일에 OPENAI_API_KEY를 추가했는지 확인하세요.');
+    console.error('2. 애플리케이션을 다시 시작해보세요.');
+    console.error('3. 개발 환경에서는 fallback 로직이 동작합니다.');
+  } else {
+    console.error('OPENAI_API_KEY environment variable is missing or empty');
+  }
+
+  if (typeof window !== 'undefined' && !isDevelopment) {
     console.log('Running in browser environment. Environment variables might not be accessible');
   }
 }
 
-// OpenAI 인스턴스 생성
+// 개발 환경이거나 API 키가 있을 때만 실제 OpenAI 인스턴스 생성
 const openai = new OpenAI({
-  apiKey: apiKey,
-  dangerouslyAllowBrowser: true // 클라이언트 사이드에서도 실행 가능하도록 설정 (주의: 실제 프로덕션에서는 API 요청을 서버 사이드에서만 수행해야 함)
+  apiKey: apiKey || 'dummy-key-for-development', // API 키가 없으면 더미 키 사용
+  dangerouslyAllowBrowser: isDevelopment // 개발 환경에서만 클라이언트 사이드 허용
 });
 
 export default openai;
+
+// 오류 처리 함수: OpenAI API 호출 실패 시 처리
+const handleOpenAIError = (error: any, defaultReturn: any) => {
+  console.error('OpenAI API 오류:', error);
+  if (isDevelopment) {
+    console.error('개발 환경: 실제 API 호출 없이 기본 결과 반환');
+  }
+  return defaultReturn;
+};
 
 /**
  * 뉴스 기사 내용을 요약하는 함수
@@ -25,6 +44,15 @@ export default openai;
  */
 export async function summarizeArticle(content: string, maxLength: number = 200): Promise<{ summary: string, originalSummary: string }> {
   try {
+    // 개발 환경에서 API 키가 없으면 더미 데이터 반환
+    if (!apiKey && isDevelopment) {
+      console.log('개발 환경에서 더미 요약 데이터 반환');
+      return {
+        summary: `${content.substring(0, maxLength)}...`,
+        originalSummary: `${content.substring(0, maxLength * 2)}...`
+      };
+    }
+
     const response = await openai.chat.completions.create({
       model: 'gpt-4o',
       messages: [
@@ -71,6 +99,13 @@ export async function summarizeArticle(content: string, maxLength: number = 200)
     return { summary, originalSummary };
   } catch (error) {
     console.error('기사 요약 중 오류 발생:', error);
+    // 개발 환경에서는 더미 데이터 반환
+    if (isDevelopment) {
+      return {
+        summary: '개발 환경에서 생성된 더미 요약입니다.',
+        originalSummary: '개발 환경에서 생성된 더미 원본 요약입니다.'
+      };
+    }
     throw new Error('기사 요약에 실패했습니다.');
   }
 }
