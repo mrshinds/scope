@@ -8,7 +8,8 @@ import { isValidEmail } from "@/lib/utils"
 import { Label } from "@/components/ui/label"
 import { supabase, signInWithMagicLink } from "@/lib/supabase"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { Loader2, Info } from "lucide-react"
+import { Loader2, Info, AlertTriangle } from "lucide-react"
+import axios from "axios"
 
 // 배포 URL 설정 (배포 환경에서는 이 값으로 수정필요)
 const SITE_URL = 'https://scope-psi.vercel.app';
@@ -113,10 +114,40 @@ export function EmailForm() {
     console.log('사이트 URL 설정:', baseUrl);
   }, []);
 
+  // 신한 메일 전용 대체 인증 플로우 사용
+  const useAlternativeAuthFlow = async (email: string) => {
+    try {
+      console.log('신한 메일 대체 인증 플로우 시작:', email);
+      const response = await axios.post('/api/auth/flow', { email });
+      
+      if (response.data.success) {
+        return {
+          success: true,
+          data: response.data,
+          isShinhanMail: true,
+          message: '대체 인증 플로우 사용: ' + response.data.message
+        };
+      } else {
+        console.error('대체 인증 플로우 오류:', response.data.error);
+        return {
+          success: false,
+          error: response.data.error || '대체 인증 처리 중 오류가 발생했습니다.'
+        };
+      }
+    } catch (error: any) {
+      console.error('대체 인증 플로우 예외:', error);
+      return {
+        success: false,
+        error: error.response?.data?.error || error.message || '대체 인증 플로우 처리 중 오류가 발생했습니다.'
+      };
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
     setError("");
+    setSuccess("");
     
     try {
       // 환경 변수 확인
@@ -144,16 +175,41 @@ export function EmailForm() {
         return;
       }
 
-      const result = await signInWithMagicLink(email);
+      // 신한 이메일 여부 확인
+      const isShinhanMail = email.toLowerCase().includes('@shinhan.com');
+      
+      // 결과 객체 초기화
+      let result;
+      
+      // 신한 메일인 경우 대체 인증 플로우 사용
+      if (isShinhanMail) {
+        console.log('신한 메일 감지 - 대체 인증 플로우 사용');
+        result = await useAlternativeAuthFlow(email);
+      } else {
+        // 일반 메일은 기존 방식 사용
+        result = await signInWithMagicLink(email);
+      }
       
       if (result.success) {
-        setSuccess(`인증 링크가 ${email}로 발송되었습니다. 이메일을 확인하고 링크를 클릭해주세요. (${MAGIC_LINK_EXPIRATION}분 이내)`);
+        let successMessage = `인증 링크가 ${email}로 발송되었습니다. 이메일을 확인하고 링크를 클릭해주세요. (${MAGIC_LINK_EXPIRATION}분 이내)`;
+        
+        // 신한 메일인 경우 추가 안내
+        if (isShinhanMail || result.isShinhanMail) {
+          successMessage += '\n\n⚠️ 신한 메일 사용자 필독: 인증 메일이 스팸함에 이미지 형태로 수신될 수 있습니다. 원본 반입 후 링크를 클릭해 주세요.';
+        }
+        
+        setSuccess(successMessage);
+        
+        // 이메일 세션 저장
+        sessionStorage.setItem("pendingAuthEmail", email);
         
         // 디버깅 정보 표시
         console.log('이메일 인증 요청 성공:', {
           email,
           timestamp: new Date().toISOString(),
-          redirectUrl: `${siteUrl}/auth/callback`
+          redirectUrl: `${siteUrl}/auth/callback`,
+          isShinhanMail: isShinhanMail || result.isShinhanMail,
+          useAlternativeFlow: isShinhanMail
         });
       } else {
         console.error('인증 이메일 발송 실패:', result.error);
@@ -221,9 +277,24 @@ export function EmailForm() {
 
       {success && (
         <Alert className="bg-green-50 text-green-800 border-green-200">
-          <AlertDescription>{success}</AlertDescription>
+          <AlertDescription className="whitespace-pre-line">{success}</AlertDescription>
         </Alert>
       )}
+      
+      {/* 신한 메일 사용자 안내 - 강조 표시 */}
+      <div className="text-xs text-amber-700 bg-amber-50 p-3 rounded-md border border-amber-200 flex items-start gap-2">
+        <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0 text-amber-700" />
+        <div>
+          <p className="font-bold mb-1">신한 메일 사용자 필수 안내:</p>
+          <ol className="list-decimal pl-4 space-y-1">
+            <li>인증 메일이 <strong>이미지 형태의 스팸 메일</strong>로 수신됩니다.</li>
+            <li>메일함에서 해당 메일을 찾아 <strong>원본 반입</strong> 처리해주세요.</li>
+            <li>원본 반입 후 인증 링크를 클릭하시기 바랍니다.</li>
+            <li>오류 발생 시 인증 메일을 다시 요청해주세요.</li>
+            <li>오류 메시지: "<strong>invalid request: both auth code and code verifier should be non-empty</strong>"가 표시되면, 다시 로그인 시도 후 원본 반입된 메일의 링크를 클릭하세요.</li>
+          </ol>
+        </div>
+      </div>
       
       {/* 인증 링크 만료 시간 안내 */}
       <div className="text-xs text-muted-foreground flex items-start gap-2">

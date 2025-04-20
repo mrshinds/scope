@@ -35,7 +35,7 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     autoRefreshToken: true,
     persistSession: true,
     detectSessionInUrl: true,
-    flowType: 'pkce',
+    flowType: 'implicit',
     // Supabase v2에서는 cookieOptions가 지원되지 않습니다.
     // 대신 localStorage에 세션을 유지합니다.
     storage: {
@@ -69,9 +69,14 @@ export const signInWithMagicLink = async (email: string) => {
     console.log('매직 링크 인증 요청:', {
       email,
       redirectUrl,
-      time: new Date().toISOString()
+      time: new Date().toISOString(),
+      authFlow: 'implicit',
+      isShinhanMail: email.toLowerCase().includes('@shinhan.com')
     });
     
+    // 신한 메일인 경우 특별 처리
+    const isShinhanMail = email.toLowerCase().includes('@shinhan.com');
+
     // 이미 등록된 이메일인지 확인 (중요: 기존 사용자의 로그인 흐름 개선)
     try {
       // 데이터베이스에서 사용자 확인 시도
@@ -95,7 +100,8 @@ export const signInWithMagicLink = async (email: string) => {
         return { 
           success: true, 
           data, 
-          message: '기존 사용자 인증 이메일 발송됨' 
+          message: '기존 사용자 인증 이메일 발송됨',
+          isShinhanMail
         };
       }
     } catch (checkError) {
@@ -109,11 +115,13 @@ export const signInWithMagicLink = async (email: string) => {
       options: {
         emailRedirectTo: redirectUrl,
         shouldCreateUser: true,
-        // 특별한 데이터 첨부 (더 긴 만료 시간 유도)
+        // 메타데이터 첨부 
         data: {
           app_metadata: {
             provider: 'email',
-            created_at: new Date().toISOString()
+            auth_flow: 'implicit',
+            created_at: new Date().toISOString(),
+            is_shinhan_mail: isShinhanMail
           }
         }
       }
@@ -121,7 +129,11 @@ export const signInWithMagicLink = async (email: string) => {
     
     if (error) throw error;
     
-    return { success: true, data };
+    return { 
+      success: true, 
+      data,
+      isShinhanMail
+    };
   } catch (error: any) {
     console.error('매직 링크 발송 오류:', error);
     return { 
