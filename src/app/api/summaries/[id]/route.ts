@@ -4,10 +4,10 @@ import { supabase } from '@/lib/supabase';
 // PUT 라우트 핸들러 - params.id로 동적 경로 세그먼트 접근
 export async function PUT(
   request: Request,
-  context: { params: { id: string } }
+  { params }: any
 ) {
   try {
-    const { id } = context.params;
+    const { id } = params;
 
     if (!id) {
       return NextResponse.json(
