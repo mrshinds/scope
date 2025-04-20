@@ -1,6 +1,7 @@
 import axios from 'axios';
 import cheerio from 'cheerio';
 import { NewsItem } from './types';
+import OpenAI from 'openai';
 
 /**
  * 네이버 뉴스에서 신한은행 관련 뉴스를 스크래핑하는 함수
@@ -164,5 +165,34 @@ export async function fetchAllNews(): Promise<NewsItem[]> {
   } catch (error) {
     console.error('뉴스 fetch 에러:', error);
     return [];
+  }
+}
+
+// API 키 확인
+const apiKey = process.env.OPENAI_API_KEY;
+
+// 안전한 OpenAI 클라이언트 생성
+const createOpenAI = () => {
+  if (!apiKey) {
+    console.warn("OPENAI_API_KEY 환경 변수가 설정되지 않았습니다.");
+    return null;
+  }
+  return new OpenAI({
+    apiKey: apiKey
+  });
+};
+
+export async function summarizeWithGPT(text: string) {
+  const openai = createOpenAI();
+  if (!openai) {
+    return { summary: "API 키가 설정되지 않아 요약을 생성할 수 없습니다.", tags: [] };
+  }
+  
+  try {
+    // 여기서 OpenAI API 호출
+    // ...
+  } catch (error) {
+    console.error("OpenAI API 호출 중 오류:", error);
+    return { summary: "요약 생성 중 오류가 발생했습니다.", tags: [] };
   }
 } 

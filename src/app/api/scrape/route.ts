@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { fetchAllPressReleases } from '@/lib/scraper';
 import { saveArticle } from '@/lib/db';
+import OpenAI from 'openai';
+
+// 환경 변수에서 API 키 가져오기
+const apiKey = process.env.OPENAI_API_KEY;
 
 /**
  * 보도자료 스크래핑 및 저장 API
@@ -9,6 +13,17 @@ import { saveArticle } from '@/lib/db';
  */
 export async function POST(req: NextRequest) {
   try {
+    // API 키 확인
+    if (!apiKey) {
+      console.warn("OPENAI_API_KEY 환경 변수가 설정되지 않았습니다. 테스트 모드로 실행합니다.");
+      return NextResponse.json({ error: "테스트 모드로 실행합니다." });
+    }
+
+    // OpenAI 클라이언트 초기화
+    const openai = new OpenAI({
+      apiKey: apiKey
+    });
+
     // 필요한 경우 인증 체크
     // 예: const session = await getServerSession(authOptions);
     // if (!session || session.user.role !== 'admin') {
@@ -112,4 +127,8 @@ export async function PUT(req: NextRequest) {
       { status: 500 }
     );
   }
+}
+
+export async function GET() {
+  return NextResponse.json({ error: "GET method not allowed" }, { status: 405 });
 } 

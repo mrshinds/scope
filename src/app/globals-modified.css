@@ -1,0 +1,9 @@
+:root {
+  --background: 0 0% 100%;
+  --foreground: 0 0% 3.9%;
+}
+
+body {
+  background-color: white;
+  color: black;
+} 
