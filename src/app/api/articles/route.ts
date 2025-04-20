@@ -38,6 +38,8 @@ const dummyArticles = [
   }
 ];
 
+export const dynamic = 'force-dynamic';
+
 export async function GET(request: Request) {
   try {
     // URL 파라미터 추출

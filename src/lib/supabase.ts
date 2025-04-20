@@ -1,46 +1,41 @@
-import { createClient } from '@supabase/supabase-js';
+import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
-// 환경 변수에서 Supabase URL과 API 키 가져오기
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+// 환경 변수가 없는 경우를 위한 기본값 (빌드 타임에만 사용)
+const FALLBACK_SUPABASE_URL = 'https://bpojldrroyijabkzvpla.supabase.co';
+const FALLBACK_SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJwb2psZHJyb3lpamFia3p2cGxhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDUwODAzNjMsImV4cCI6MjA2MDY1NjM2M30.jedIwcKuuZHhQXzA0SO-eXrCdOGA_LvJkLLt-o6RD00';
+
+// 환경 변수 확인
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || FALLBACK_SUPABASE_URL;
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || FALLBACK_SUPABASE_ANON_KEY;
 
 // 환경 변수 유효성 검사
-if (!supabaseUrl || !supabaseAnonKey) {
-  if (process.env.NODE_ENV === 'production') {
-    throw new Error('Supabase 환경 변수가 설정되지 않았습니다.');
-  } else {
-    console.warn(
-      '⚠️ Supabase 환경 변수가 없습니다. 일부 기능이 작동하지 않을 수 있습니다.\n' +
-      '- NEXT_PUBLIC_SUPABASE_URL 및 NEXT_PUBLIC_SUPABASE_ANON_KEY를 .env.local 파일에 설정해주세요.'
-    );
+let validationErrorMessage = '';
+
+// 개발/배포 환경 확인
+const isProduction = typeof process !== 'undefined' 
+  && process.env 
+  && (process.env.NODE_ENV === 'production' || process.env.NEXT_PUBLIC_VERCEL_ENV === 'production');
+
+// 배포 환경에서만 검증
+if (isProduction) {
+  if (!supabaseUrl) validationErrorMessage += 'NEXT_PUBLIC_SUPABASE_URL is missing. ';
+  if (!supabaseAnonKey) validationErrorMessage += 'NEXT_PUBLIC_SUPABASE_ANON_KEY is missing. ';
+  
+  if (validationErrorMessage) {
+    console.error(`Supabase environment error: ${validationErrorMessage}`);
   }
 }
 
 // Supabase 클라이언트 생성
-export const supabase = createClient(
-  supabaseUrl || 'https://example.supabase.co', // 개발 환경에서 기본값 제공
-  supabaseAnonKey || 'dummy-key', 
-  {
-    auth: {
-      persistSession: true,
-      autoRefreshToken: true
-    }
-  }
-);
+export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 // Supabase 연결 상태 확인
 export const checkSupabaseConnection = async () => {
   try {
-    const { error } = await supabase.from('users').select('count', { count: 'exact', head: true });
-    
-    if (error) {
-      console.error('Supabase 연결 오류:', error);
-      return false;
-    }
-    
-    return true;
+    const { error } = await supabase.from('articles').select('id', { count: 'exact', head: true });
+    return !error;
   } catch (error) {
-    console.error('Supabase 연결 확인 중 예외 발생:', error);
+    console.error('Supabase connection error:', error);
     return false;
   }
 };

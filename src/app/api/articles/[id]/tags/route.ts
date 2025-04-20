@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
 
+export const dynamic = 'force-dynamic';
+
 // 태그 추가
 export async function POST(
   request: Request,

@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
 
+export const dynamic = 'force-dynamic';
+
 // PUT 라우트 핸들러 - params.id로 동적 경로 세그먼트 접근
 export async function PUT(
   request: Request,

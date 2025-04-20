@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { supabase, checkSupabaseConnection } from '@/lib/supabase';
 
+export const dynamic = 'force-dynamic';
+
 // 인기 태그 더미 데이터
 const dummyTags = [
   { name: '디지털자산', count: 15 },

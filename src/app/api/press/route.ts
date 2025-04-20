@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getArticles } from '@/lib/db';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * 프레스 릴리즈 API 핸들러
  * @param req Request 객체

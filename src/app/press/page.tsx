@@ -1,5 +1,7 @@
 'use client';
 
+export const dynamic = 'force-dynamic';
+
 import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { useSearchParams, useRouter } from 'next/navigation';
@@ -38,9 +40,9 @@ export default function PressPage() {
   // URL 파라미터
   const searchParams = useSearchParams();
   const router = useRouter();
-  const initPage = Number(searchParams.get('page') || '1');
-  const initSource = searchParams.get('source') || '';
-  const initSearch = searchParams.get('search') || '';
+  const initPage = Number(searchParams?.get('page') || '1');
+  const initSource = searchParams?.get('source') || '';
+  const initSearch = searchParams?.get('search') || '';
 
   // 상태 관리
   const [loading, setLoading] = useState(false);
@@ -72,6 +74,8 @@ export default function PressPage() {
 
   // URL 파라미터 업데이트
   const updateUrlParams = useCallback((newParams: Record<string, string | number | null>) => {
+    if (!searchParams) return;
+    
     const params = new URLSearchParams(searchParams.toString());
     
     Object.entries(newParams).forEach(([key, value]) => {

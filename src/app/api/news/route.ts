@@ -3,6 +3,8 @@ import { NewsItem } from '@/lib/types';
 import axios from 'axios';
 import * as cheerio from 'cheerio';
 
+export const dynamic = 'force-dynamic';
+
 // 네이버 뉴스 스크래핑 함수 (금융, 경제 관련 뉴스 검색)
 async function scrapeNaverNews(page: number = 1): Promise<NewsItem[]> {
   console.log(`네이버 뉴스 스크래핑 페이지: ${page}`);
