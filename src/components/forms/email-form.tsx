@@ -173,6 +173,12 @@ export function EmailForm() {
     }
   };
 
+  // 이메일 도메인 확인 함수 추가
+  const getEmailDomain = (email: string): string => {
+    const parts = email.split('@');
+    return parts.length > 1 ? parts[1].toLowerCase() : '';
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
@@ -207,8 +213,12 @@ export function EmailForm() {
         return;
       }
 
+      // 이메일 도메인 확인
+      const domain = getEmailDomain(email);
+      
       // 신한 이메일 여부 확인
-      const isShinhanMail = email.toLowerCase().includes('@shinhan.com');
+      const isShinhanMail = domain === 'shinhan.com';
+      const isNaverMail = domain === 'naver.com';
       
       // 결과 객체 초기화
       let result;
@@ -225,9 +235,13 @@ export function EmailForm() {
       if (result.success) {
         let successMessage = `인증 링크가 ${email}로 발송되었습니다. 이메일을 확인하고 링크를 클릭해주세요. (${MAGIC_LINK_EXPIRATION}분 이내)`;
         
-        // 신한 메일인 경우 추가 안내
+        // 도메인별 추가 안내
         if (isShinhanMail || result.isShinhanMail) {
-          successMessage += '\n\n⚠️ 신한 메일 사용자 필독: 인증 메일이 스팸함에 이미지 형태로 수신될 수 있습니다. 원본 반입 후 링크를 클릭해 주세요.';
+          successMessage += '\n\n⚠️ **신한 메일 사용자 필독**:\n1. 인증 메일이 스팸함에 이미지 형태로 수신될 수 있습니다.\n2. 원본 반입 후 **즉시** 링크를 클릭해 주세요.\n3. 링크 클릭 시 "code_verifier" 오류가 발생한다면 개인 이메일 사용을 권장합니다.';
+        } else if (isNaverMail) {
+          successMessage += '\n\n⚠️ **네이버 메일 사용자 안내**:\n1. 링크 클릭 시 "code_verifier" 오류가 발생할 수 있습니다.\n2. 이 경우 다른 브라우저에서 링크를 열거나 다른 이메일 계정 사용을 권장합니다.';
+        } else {
+          successMessage += '\n\n💡 **알림**: 만약 로그인 링크 클릭 후 오류가 발생한다면, 다른 브라우저에서 링크를 열어보세요.';
         }
         
         setSuccess(successMessage);
@@ -235,21 +249,34 @@ export function EmailForm() {
         // 이메일 세션 저장
         sessionStorage.setItem("pendingAuthEmail", email);
         
-        // 디버깅 정보 표시
-        console.log('이메일 인증 요청 성공:', {
-          email,
-          timestamp: new Date().toISOString(),
-          redirectUrl: `${siteUrl}/auth/callback`,
-          isShinhanMail: isShinhanMail || result.isShinhanMail,
-          useAlternativeFlow: isShinhanMail
-        });
+        // 디버깅 정보 표시 (개발 환경에서만)
+        if (process.env.NODE_ENV === 'development') {
+          console.log('이메일 인증 요청 성공:', {
+            email,
+            timestamp: new Date().toISOString(),
+            redirectUrl: `${siteUrl}/auth/callback`,
+            domain,
+            isShinhanMail,
+            isNaverMail,
+            useAlternativeFlow: isShinhanMail
+          });
+          
+          // 개발 환경에서 추가 디버깅 정보
+          setDebugInfo({
+            email,
+            timestamp: new Date().toISOString(),
+            domain,
+            emailType: isShinhanMail ? 'shinhan' : isNaverMail ? 'naver' : 'other',
+            authFlow: isShinhanMail ? 'alternative' : 'standard'
+          });
+        }
       } else {
         console.error('인증 이메일 발송 실패:', result.error);
         setError('인증 이메일을 발송하는 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.');
       }
     } catch (error: any) {
-      console.error('인증 처리 중 예외 발생:', error);
-      setError(`인증 처리 중 오류가 발생했습니다: ${error.message || '알 수 없는 오류'}`);
+      console.error('인증 처리 오류:', error);
+      setError('인증 처리 중 오류가 발생했습니다: ' + (error.message || '알 수 없는 오류'));
     } finally {
       setIsLoading(false);
     }
@@ -288,94 +315,77 @@ export function EmailForm() {
   };
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4 w-full">
-      <div className="space-y-2">
-        <Label htmlFor="email">이메일</Label>
-        <Input
-          id="email"
-          placeholder="이메일 입력"
-          type="email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          disabled={isLoading}
-        />
-      </div>
-      
+    <div className="grid gap-6">
+      {/* 알림 영역 */}
       {error && (
         <Alert variant="destructive">
-          <AlertDescription className="whitespace-pre-line">{error}</AlertDescription>
+          <AlertTriangle className="h-4 w-4" />
+          <AlertDescription className="mt-1 whitespace-pre-line">
+            {error}
+          </AlertDescription>
+        </Alert>
+      )}
+      
+      {success && (
+        <Alert className="bg-green-50 border-green-200">
+          <Info className="h-4 w-4 text-green-600" />
+          <AlertDescription className="mt-1 whitespace-pre-line">
+            {success}
+          </AlertDescription>
         </Alert>
       )}
 
-      {success && (
-        <Alert className="bg-green-50 text-green-800 border-green-200">
-          <AlertDescription className="whitespace-pre-line">{success}</AlertDescription>
-        </Alert>
-      )}
-      
-      {/* 신한 메일 사용자 안내 - 강조 표시 */}
-      <div className="text-xs text-amber-700 bg-amber-50 p-3 rounded-md border border-amber-200 flex items-start gap-2">
-        <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0 text-amber-700" />
-        <div>
-          <p className="font-bold mb-1">신한 메일 사용자 필수 안내:</p>
-          <ol className="list-decimal pl-4 space-y-1">
+      {/* 신한 메일 사용자 주의사항 */}
+      <Alert className="bg-amber-50 border-amber-200">
+        <AlertTriangle className="h-4 w-4 text-amber-600" />
+        <AlertDescription className="mt-1">
+          <strong>신한 메일 사용자 필수 안내:</strong>
+          <ol className="list-decimal pl-5 mt-1 space-y-1 text-sm">
             <li>인증 메일이 <strong>이미지 형태의 스팸 메일</strong>로 수신됩니다.</li>
             <li>메일함에서 해당 메일을 찾아 <strong>원본 반입 즉시</strong> 링크를 클릭하세요.</li>
             <li>원본 반입 후 시간이 지나면 링크가 만료될 수 있습니다.</li>
-            <li>만약 "OTP 만료" 오류가 발생하면, 아래 버튼으로 새 인증 링크를 요청하세요.</li>
+            <li>만약 "OTP 만료" 또는 "code_verifier 누락" 오류가 발생하면, 아래 버튼으로 새 인증 링크를 요청하세요.</li>
             <li>가능하면 <strong>개인 이메일</strong>을 사용하면 이 문제를 피할 수 있습니다.</li>
           </ol>
-        </div>
-      </div>
-      
-      {/* 인증 링크 만료 시간 안내 */}
-      <div className="text-xs text-muted-foreground flex items-start gap-2">
-        <Info className="h-4 w-4 mt-0.5 shrink-0" />
-        <span>
-          인증 링크는 보안을 위해 발송 후 {MAGIC_LINK_EXPIRATION}분 동안만 유효합니다. 
-          시간이 경과한 경우 새 링크를 요청해주세요.
-        </span>
-      </div>
-      
-      {/* 디버그 정보 표시 (개발 모드에서만) */}
-      {debugInfo && process.env.NODE_ENV !== 'production' && (
-        <div className="p-2 bg-gray-100 text-xs font-mono overflow-x-auto">
-          <pre>{JSON.stringify(debugInfo, null, 2)}</pre>
-        </div>
-      )}
-      
-      <Button type="submit" className="w-full" disabled={isLoading}>
-        {isLoading ? (
-          <>
-            <Loader2 className="mr-2 h-4 w-4 animate-spin" /> 인증 메일 발송 중...
-          </>
-        ) : (
-          "인증 메일 발송"
-        )}
-      </Button>
+        </AlertDescription>
+      </Alert>
 
-      {process.env.NODE_ENV !== 'production' && (
-        <>
-          <Button 
-            type="button" 
-            variant="outline" 
-            className="w-full mt-2" 
-            onClick={handleDevAuth}
-            disabled={isLoading}
-          >
-            테스트 인증 메일 발송
+      <form onSubmit={handleSubmit}>
+        <div className="grid gap-2">
+          <div className="grid gap-1">
+            <Label className="sr-only" htmlFor="email">
+              이메일
+            </Label>
+            <Input
+              id="email"
+              placeholder="이메일 주소를 입력하세요"
+              type="email"
+              autoCapitalize="none"
+              autoComplete="email"
+              autoCorrect="off"
+              disabled={isLoading}
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+            />
+          </div>
+          <Button disabled={isLoading}>
+            {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            인증 메일 발송
           </Button>
-          
-          <Button 
-            type="button" 
-            variant="secondary" 
-            className="w-full mt-2" 
-            onClick={handleTestCallback}
-          >
-            콜백 URL 테스트
-          </Button>
-        </>
+        </div>
+      </form>
+      
+      <div className="text-sm text-gray-500">
+        인증 링크는 보안을 위해 발송 후 {MAGIC_LINK_EXPIRATION}분 동안만 유효합니다. 시간이 경과한 경우 새 링크를 요청해주세요.
+      </div>
+
+      {/* 개발 환경에서만 표시되는 디버깅 정보 */}
+      {process.env.NODE_ENV === 'development' && debugInfo && (
+        <div className="mt-4 p-2 border border-gray-200 rounded text-xs overflow-auto bg-gray-50">
+          <strong>디버그 정보:</strong>
+          <pre className="mt-1">{JSON.stringify(debugInfo, null, 2)}</pre>
+        </div>
       )}
-    </form>
-  )
+    </div>
+  );
 } 

@@ -77,6 +77,55 @@ const extractTokenFromHash = (url: string): {
   }
 };
 
+// 해시에서 코드 검증기 추출
+const extractCodeVerifierFromHash = (url: string): string | null => {
+  try {
+    if (!url.includes('#')) return null;
+    
+    const hashPart = url.split('#')[1];
+    const params = new URLSearchParams(hashPart);
+    return params.get('code_verifier');
+  } catch (e) {
+    console.error('해시에서 코드 검증기 추출 실패:', e);
+    return null;
+  }
+};
+
+// URL과 로컬 스토리지에서 코드 검증기 찾기
+const findCodeVerifier = (code: string | null, url: string): string | null => {
+  try {
+    // 1. URL 해시에서 직접 검색
+    const hashVerifier = extractCodeVerifierFromHash(url);
+    if (hashVerifier) {
+      console.log('해시에서 코드 검증기 찾음');
+      return hashVerifier;
+    }
+    
+    // 2. 로컬 스토리지에서 검색 (서버 측에서는 작동하지 않음)
+    if (typeof window !== 'undefined' && code) {
+      // 로컬 스토리지에서 검증기 가져오기 시도
+      const storedVerifiers = localStorage.getItem('pkce_verifiers');
+      if (storedVerifiers) {
+        try {
+          const verifiers = JSON.parse(storedVerifiers);
+          if (verifiers[code]) {
+            console.log('로컬 스토리지에서 코드 검증기 찾음');
+            return verifiers[code];
+          }
+        } catch (e) {
+          console.error('코드 검증기 파싱 오류:', e);
+        }
+      }
+    }
+    
+    // 3. 기본 코드 검증기 (응급 조치)
+    return '_fallback_verifier_';
+  } catch (e) {
+    console.error('코드 검증기 찾기 오류:', e);
+    return null;
+  }
+};
+
 export async function GET(request: NextRequest) {
   // 디버깅을 위한 요청 정보 로깅
   console.log('=== 인증 콜백 핸들러 호출됨 ===');
@@ -98,6 +147,12 @@ export async function GET(request: NextRequest) {
   if (!code && request.url.includes('#')) {
     code = extractCodeFromURL(request.url);
     console.log('해시에서 코드 추출 시도:', code ? '성공' : '실패');
+  }
+  
+  // 코드 검증기 찾기 시도
+  if (!codeVerifier) {
+    codeVerifier = findCodeVerifier(code, request.url);
+    console.log('코드 검증기 찾기 시도:', codeVerifier ? '성공' : '실패');
   }
   
   // 해시에서 액세스 토큰 추출 시도
@@ -256,75 +311,133 @@ export async function GET(request: NextRequest) {
   }
 
   // code와 code_verifier가 모두 있는지 확인
-  if (!code || !codeVerifier) {
-    console.error('인증 코드 또는 코드 검증기가 누락되었습니다.');
+  if (!code) {
+    console.error('인증 코드가 누락되었습니다.');
     return NextResponse.redirect(
-      new URL('/login?error=missing_code_or_verifier&message=인증+코드+또는+코드+검증기가+누락되었습니다.', request.url)
+      new URL('/login?error=missing_code&message=인증+코드가+누락되었습니다.', request.url)
     );
   }
 
   // 코드가 있는 경우 Supabase로 교환 시도
-  if (code) {
-    console.log('인증 코드 감지됨, 세션 교환 시도. 코드 길이:', code.length);
+  console.log('인증 코드 감지됨, 세션 교환 시도. 코드 길이:', code.length);
+  
+  try {
+    // 백엔드에서 supabase 클라이언트 생성 (각 요청마다 새로 생성)
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || FALLBACK_SUPABASE_URL;
+    const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || FALLBACK_SUPABASE_ANON_KEY;
     
-    try {
-      // 백엔드에서 supabase 클라이언트 생성 (각 요청마다 새로 생성)
-      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || FALLBACK_SUPABASE_URL;
-      const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || FALLBACK_SUPABASE_ANON_KEY;
-      
-      // 서버 전용 Supabase 클라이언트
-      const supabase = createClient(supabaseUrl, supabaseAnonKey, {
-        auth: {
-          autoRefreshToken: false,
-          persistSession: false,
-          detectSessionInUrl: false
-        }
-      });
-      
-      // 코드를 세션으로 교환
-      console.log('세션 교환 시작...');
-      const { data, error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
-      
-      if (exchangeError) {
-        console.error('세션 교환 오류:', exchangeError);
-        
-        // 오류 상세 정보 로깅
-        console.error('세션 교환 오류 상세:', {
-          message: exchangeError.message,
-          status: exchangeError.status,
-          code: exchangeError.code,
-        });
-        
-        // 오류 종류에 따른 처리
-        if (exchangeError.message.toLowerCase().includes('expired')) {
-          return NextResponse.redirect(
-            new URL('/login?error=link_expired&message=인증+링크가+만료되었습니다.+새+링크를+요청해주세요.', request.url)
-          );
-        }
-        
-        return NextResponse.redirect(
-          new URL(`/login?error=session_exchange_error&message=${encodeURIComponent(exchangeError.message)}`, request.url)
-        );
+    // 서버 전용 Supabase 클라이언트
+    const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false,
+        detectSessionInUrl: false
       }
-      
-      // 세션 교환 성공
-      if (data.session) {
-        console.log('세션 교환 성공! 사용자:', data.session.user.email);
-        
-        // 세션 데이터를 클라이언트에 저장하는 HTML 반환
-        return handleSuccessfulAuthentication(data, type, request);
-      } else {
-        console.error('세션 교환은 성공했지만 세션 데이터가 없습니다.');
-        return NextResponse.redirect(
-          new URL('/login?error=no_session&message=세션+데이터를+받지+못했습니다.', request.url)
-        );
-      }
-    } catch (error: any) {
-      console.error('세션 교환 처리 중 예외 발생:', error);
-      return NextResponse.redirect(
-        new URL(`/login?error=unexpected_error&message=${encodeURIComponent(error.message || '알 수 없는 오류')}`, request.url)
+    });
+    
+    // 코드를 세션으로 교환
+    console.log('세션 교환 시작:', {
+      hasCode: !!code,
+      hasVerifier: !!codeVerifier
+    });
+    
+    // 코드 검증기가 없는 경우 특별 처리
+    if (!codeVerifier) {
+      console.log('코드 검증기 누락됨 - 보안 정책으로 인해 세션 교환 불가');
+      return new Response(
+        `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <title>인증 오류</title>
+          <meta charset="UTF-8">
+          <style>
+            body { font-family: sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; background-color: #f5f5f5; }
+            .container { text-align: center; padding: 2rem; background-color: white; border-radius: 0.5rem; box-shadow: 0 2px 8px rgba(0,0,0,0.1); max-width: 90%; width: 600px; }
+            .error { color: #e74c3c; margin: 1rem 0; }
+            .button { background: #3498db; color: white; border: none; padding: 0.5rem 1rem; border-radius: 0.25rem; cursor: pointer; }
+            .debug { font-size: 0.8rem; color: #666; text-align: left; margin-top: 1rem; padding: 1rem; background: #f9f9f9; border-radius: 0.25rem; }
+          </style>
+        </head>
+        <body>
+          <div class="container">
+            <h2>인증 오류 발생</h2>
+            <div class="error">
+              인증 코드 검증기가 누락되었습니다. 이는 이메일 클라이언트가 링크를 수정했거나 미리보기로 인한 문제일 수 있습니다.
+            </div>
+            <p>이 문제를 해결하려면:</p>
+            <ol style="text-align: left;">
+              <li>원본 이메일로 돌아가서 링크를 <strong>다시 클릭</strong>하세요.</li>
+              <li>신한 메일을 사용하는 경우, 원본 반입 후 <strong>즉시</strong> 링크를 클릭하세요.</li>
+              <li>또는 아래 버튼을 눌러 새 인증 링크를 요청하세요.</li>
+            </ol>
+            <button class="button" onclick="window.location.href='/login?error=code_verifier_missing&retry=true'">
+              로그인 페이지로 돌아가기
+            </button>
+            
+            <div class="debug">
+              <strong>디버그 정보:</strong><br>
+              요청 시간: ${new Date().toISOString()}<br>
+              코드 존재: ${code ? '예' : '아니오'}<br>
+              검증기 존재: ${codeVerifier ? '예' : '아니오'}<br>
+              URL 파라미터 수: ${Array.from(requestUrl.searchParams.entries()).length}<br>
+              해시 파라미터 존재: ${request.url.includes('#') ? '예' : '아니오'}<br>
+            </div>
+          </div>
+        </body>
+        </html>
+        `,
+        { headers: { 'Content-Type': 'text/html; charset=utf-8' } }
       );
     }
+    
+    const { data, error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
+    
+    if (exchangeError) {
+      console.error('세션 교환 오류:', exchangeError);
+      
+      // 오류 상세 정보 로깅
+      console.error('세션 교환 오류 상세:', {
+        message: exchangeError.message,
+        status: exchangeError.status,
+        code: exchangeError.code,
+      });
+      
+      // 오류 종류에 따른 처리
+      if (exchangeError.message.toLowerCase().includes('expired')) {
+        return NextResponse.redirect(
+          new URL('/login?error=link_expired&message=인증+링크가+만료되었습니다.+새+링크를+요청해주세요.', request.url)
+        );
+      }
+      
+      if (exchangeError.message.toLowerCase().includes('code verifier')) {
+        return NextResponse.redirect(
+          new URL('/login?error=code_verifier_error&message=인증+코드+검증에+실패했습니다.+이메일+클라이언트가+링크를+수정했을+수+있습니다.', request.url)
+        );
+      }
+      
+      return NextResponse.redirect(
+        new URL(`/login?error=session_exchange_error&message=${encodeURIComponent(exchangeError.message)}`, request.url)
+      );
+    }
+    
+    // 세션 교환 성공
+    if (data.session) {
+      console.log('세션 교환 성공! 사용자:', data.session.user.email);
+      
+      // 세션 데이터를 클라이언트에 저장하는 HTML 반환
+      return handleSuccessfulAuthentication(data, type, request);
+    } else {
+      console.error('세션 교환은 성공했지만 세션 데이터가 없습니다.');
+      return NextResponse.redirect(
+        new URL('/login?error=no_session&message=세션+데이터를+받지+못했습니다.', request.url)
+      );
+    }
+  } catch (error: any) {
+    console.error('세션 교환 처리 중 예외 발생:', error);
+    return NextResponse.redirect(
+      new URL(`/login?error=unexpected_error&message=${encodeURIComponent(error.message || '알 수 없는 오류')}`, request.url)
+    );
   }
 }
 

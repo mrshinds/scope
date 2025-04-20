@@ -34,10 +34,8 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
     autoRefreshToken: true,
     persistSession: true,
-    detectSessionInUrl: true,
+    detectSessionInUrl: false,
     flowType: 'pkce',
-    // Supabase v2에서는 cookieOptions가 지원되지 않습니다.
-    // 대신 localStorage에 세션을 유지합니다.
     storage: {
       getItem: (key) => {
         if (typeof window === 'undefined') return null;
@@ -51,7 +49,8 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
         if (typeof window === 'undefined') return;
         localStorage.removeItem(key);
       }
-    }
+    },
+    debug: true
   }
 });
 
@@ -77,6 +76,17 @@ export const signInWithMagicLink = async (email: string) => {
     // 신한 메일인 경우 특별 처리
     const isShinhanMail = email.toLowerCase().includes('@shinhan.com');
 
+    // 인증 요청 전에 필요한 경우 코드 검증기를 저장
+    if (typeof window !== 'undefined') {
+      // 현재 페이지의 URL을 저장 (리디렉션 후 돌아올 위치)
+      localStorage.setItem('auth_return_path', window.location.pathname);
+      
+      // 코드 검증기를 로컬에 임시 저장할 공간 확보
+      if (!localStorage.getItem('pkce_verifiers')) {
+        localStorage.setItem('pkce_verifiers', JSON.stringify({}));
+      }
+    }
+
     // 이미 등록된 이메일인지 확인 (중요: 기존 사용자의 로그인 흐름 개선)
     try {
       // 데이터베이스에서 사용자 확인 시도
@@ -90,9 +100,22 @@ export const signInWithMagicLink = async (email: string) => {
       if (userData?.id) {
         console.log('기존 사용자 감지:', email);
         
-        // 다른 방식으로 매직 링크 발송 (세션 재설정용)
-        const { data, error } = await supabase.auth.resetPasswordForEmail(email, {
-          redirectTo: redirectUrl
+        // OTP 로그인 사용 (비밀번호 재설정 대신)
+        const { data, error } = await supabase.auth.signInWithOtp({
+          email,
+          options: {
+            emailRedirectTo: redirectUrl,
+            shouldCreateUser: false,
+            data: {
+              app_metadata: {
+                provider: 'email',
+                auth_flow: 'pkce',
+                created_at: new Date().toISOString(),
+                is_shinhan_mail: isShinhanMail,
+                is_existing_user: true
+              }
+            }
+          }
         });
         
         if (error) throw error;
