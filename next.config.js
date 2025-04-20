@@ -42,7 +42,13 @@ const nextConfig = {
     DATABASE_URL: process.env.DATABASE_URL,
     SCRAPING_INTERVAL_MINUTES: process.env.SCRAPING_INTERVAL_MINUTES,
     MAX_ARTICLES_PER_SOURCE: process.env.MAX_ARTICLES_PER_SOURCE
-  }
+  },
+  
+  // 클라이언트에 노출할 환경 변수 접두사 설정
+  // ADMIN_ACCESS_TOKEN은 NEXT_PUBLIC_ 접두사가 없어 클라이언트에 노출되지 않음
+  publicRuntimeConfig: {
+    // 클라이언트에 노출할 추가 설정
+  },
 };
 
 module.exports = nextConfig; 

@@ -288,7 +288,7 @@ export function EmailForm() {
       
       {error && (
         <Alert variant="destructive">
-          <AlertDescription>{error}</AlertDescription>
+          <AlertDescription className="whitespace-pre-line">{error}</AlertDescription>
         </Alert>
       )}
 
@@ -305,10 +305,10 @@ export function EmailForm() {
           <p className="font-bold mb-1">신한 메일 사용자 필수 안내:</p>
           <ol className="list-decimal pl-4 space-y-1">
             <li>인증 메일이 <strong>이미지 형태의 스팸 메일</strong>로 수신됩니다.</li>
-            <li>메일함에서 해당 메일을 찾아 <strong>원본 반입</strong> 처리해주세요.</li>
-            <li>원본 반입 후 인증 링크를 클릭하시기 바랍니다.</li>
-            <li>오류 발생 시 인증 메일을 다시 요청해주세요.</li>
-            <li>오류 메시지: "<strong>invalid request: both auth code and code verifier should be non-empty</strong>"가 표시되면, 다시 로그인 시도 후 원본 반입된 메일의 링크를 클릭하세요.</li>
+            <li>메일함에서 해당 메일을 찾아 <strong>원본 반입 즉시</strong> 링크를 클릭하세요.</li>
+            <li>원본 반입 후 시간이 지나면 링크가 만료될 수 있습니다.</li>
+            <li>만약 "OTP 만료" 오류가 발생하면, 아래 버튼으로 새 인증 링크를 요청하세요.</li>
+            <li>가능하면 <strong>개인 이메일</strong>을 사용하면 이 문제를 피할 수 있습니다.</li>
           </ol>
         </div>
       </div>

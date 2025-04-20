@@ -10,11 +10,46 @@ const publicApiRoutes = ['/api/news', '/api/press'];
 // 인증 API 관련 경로
 const authRoutes = ['/auth/callback', '/login', '/verify', '/set-password'];
 
+// 운영 환경 확인
+const isProd = process.env.NODE_ENV === 'production';
+
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
   
   // 디버깅 로그 추가
   console.log('미들웨어 실행:', pathname);
+
+  // API 요청 처리
+  if (pathname.startsWith('/api/')) {
+    // 강제 로그인 API 보호
+    if (pathname === '/api/auth/force-login' && isProd) {
+      console.log('관리자 API 인증 확인:', pathname);
+      
+      // 인증 토큰 가져오기
+      const authHeader = request.headers.get('authorization');
+      const adminToken = authHeader?.startsWith('Bearer ') 
+        ? authHeader.substring(7) 
+        : null;
+      
+      // 운영 환경에서 토큰이 유효하지 않은 경우
+      if (!adminToken || adminToken !== process.env.ADMIN_ACCESS_TOKEN) {
+        console.error('관리자 API 접근 거부:', pathname);
+        return NextResponse.json(
+          { error: '인증되지 않은 접근입니다.' },
+          { status: 403 }
+        );
+      }
+    }
+    
+    // 공개 API는 인증 없이 허용
+    if (publicApiRoutes.some(route => pathname.startsWith(route))) {
+      console.log('공개 API 경로 감지:', pathname);
+      return NextResponse.next();
+    }
+    
+    // 그 외 API 요청은 기본 처리
+    return NextResponse.next();
+  }
 
   // 인증 콜백 URL은 그대로 통과
   if (pathname.startsWith('/auth/callback')) {
@@ -26,12 +61,6 @@ export async function middleware(request: NextRequest) {
   // 로그인, 회원가입 등 인증 관련 페이지는 그대로 통과
   if (authRoutes.some(route => pathname.startsWith(route))) {
     console.log('인증 관련 경로 감지:', pathname);
-    return NextResponse.next();
-  }
-
-  // 공개 API는 인증 없이 허용
-  if (publicApiRoutes.some(route => pathname.startsWith(route))) {
-    console.log('공개 API 경로 감지:', pathname);
     return NextResponse.next();
   }
 
@@ -65,13 +94,15 @@ export async function middleware(request: NextRequest) {
   return NextResponse.next();
 }
 
-// 미들웨어가 실행될 경로 구성 - 모든 경로에 대해 실행하도록 수정
+// 미들웨어가 실행될 경로 구성
 export const config = {
   matcher: [
     /*
      * 다음 경로에 미들웨어 실행
      * - 모든 경로 ('/(.*)')
+     * - 관리자 API 경로 명시적 포함
      */
     '/(.*)',
+    '/api/auth/force-login'
   ],
 }; 
