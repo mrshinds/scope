@@ -10,6 +10,9 @@ import { supabase, signInWithMagicLink } from "@/lib/supabase"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Loader2, Info, AlertTriangle } from "lucide-react"
 import axios from "axios"
+import { useSupabase } from '@/app/supabase-provider'
+import { toast } from '../ui/use-toast'
+import { isShinhanEmail } from '@/lib/email-utils'
 
 // 배포 URL 설정 (배포 환경에서는 이 값으로 수정필요)
 const SITE_URL = 'https://scope-psi.vercel.app';
@@ -20,12 +23,14 @@ const MAGIC_LINK_EXPIRATION = 30; // 30분으로 늘림
 export function EmailForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { supabase } = useSupabase();
   const [email, setEmail] = useState("");
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [apiUrl, setApiUrl] = useState("");
   const [debugInfo, setDebugInfo] = useState<any>(null);
+  const [debug, setDebugState] = useState<Record<string, any>>({});
 
   // URL 파라미터에서 오류 메시지 확인 및 auth.url 파라미터 확인
   useEffect(() => {
@@ -181,102 +186,230 @@ export function EmailForm() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setError(null);
+    setDebugState({});
+
+    // 이메일 검증
+    if (!email.trim()) {
+      setError('이메일을 입력해주세요.');
+      return;
+    }
+
+    // 이메일 형식 검증
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      setError('유효한 이메일 형식이 아닙니다.');
+      return;
+    }
+
     setIsLoading(true);
-    setError("");
-    setSuccess("");
-    
-    try {
-      // 환경 변수 확인
-      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-      const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || window.location.origin;
-      
-      console.log('환경 설정:', {
-        supabaseUrl: supabaseUrl ? '설정됨' : '미설정',
-        siteUrl,
-        nodeEnv: process.env.NODE_ENV,
-        vercelEnv: process.env.NEXT_PUBLIC_VERCEL_ENV,
-        redirectUrl: `${siteUrl}/auth/callback`,
-        flowType: 'pkce', // 인증 플로우 타입 표시
-      });
-      
-      if (!supabaseUrl) {
-        console.error('Supabase URL이 설정되지 않았습니다.');
-        setError('서버 설정 오류가 발생했습니다. 관리자에게 문의하세요.');
-        setIsLoading(false);
-        return;
+
+    // 신한은행 이메일 도메인인지 확인
+    const isShinhan = isShinhanEmail(email);
+
+    // 디버깅 정보를 로컬 스토리지에 저장
+    const saveDebugInfo = (data: Record<string, any>) => {
+      try {
+        // 로컬 스토리지에 이메일 저장
+        localStorage.setItem('auth_email', email);
+        localStorage.setItem('auth_timestamp', new Date().toISOString());
+        
+        // 디버깅 정보 저장
+        localStorage.setItem('email_debug_info', JSON.stringify({
+          email,
+          isShinhan,
+          timestamp: new Date().toISOString(),
+          ...data
+        }));
+        
+        // PKCE 백업 상태 확인
+        const pkceBackup = localStorage.getItem('pkce_verifiers_backup');
+        setDebugState(prev => ({
+          ...prev,
+          email,
+          isShinhan,
+          has_pkce_backup: !!pkceBackup,
+          timestamp: new Date().toISOString()
+        }));
+      } catch (e) {
+        console.error('디버깅 정보 저장 실패:', e);
       }
+    };
+
+    // 백업된 PKCE 정보가 있는지 확인하고, 이전에 실패한 인증 시도가 있다면 정보 저장
+    const checkPreviousAuthAttempts = () => {
+      try {
+        // 모든 PKCE 관련 항목 찾기
+        const pkceItems: Record<string, any> = {};
+        let foundVerifiers = false;
+        
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i);
+          if (key && (key.includes('pkce') || key.includes('code_verifier'))) {
+            const value = localStorage.getItem(key);
+            pkceItems[key] = value ? (value.length > 10 ? `${value.substring(0, 10)}...` : value) : null;
+            foundVerifiers = true;
+          }
+        }
+        
+        // 이전 인증 시도 정보
+        const lastError = localStorage.getItem('auth_last_error');
+        
+        setDebugState(prev => ({
+          ...prev,
+          found_pkce_items: foundVerifiers,
+          pkce_items_count: Object.keys(pkceItems).length,
+          has_previous_error: !!lastError
+        }));
+        
+        return {
+          hasPkceItems: foundVerifiers,
+          lastError: lastError ? JSON.parse(lastError) : null
+        };
+      } catch (e) {
+        console.error('이전 인증 시도 확인 오류:', e);
+        return { hasPkceItems: false, lastError: null };
+      }
+    };
+
+    // PKCE 백업 생성
+    const backupPkceVerifiers = () => {
+      try {
+        const pkceData: Record<string, any> = {};
+        let foundVerifiers = false;
+        
+        // 모든 PKCE 관련 정보 수집
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i);
+          if (key && (key.includes('pkce') || key.includes('code_verifier'))) {
+            const value = localStorage.getItem(key);
+            if (value) {
+              pkceData[key] = value;
+              pkceData[key + '_time'] = Date.now();
+              foundVerifiers = true;
+            }
+          }
+        }
+        
+        // 백업 데이터에 메타데이터 추가
+        if (foundVerifiers) {
+          pkceData['_meta'] = {
+            email,
+            created_at: new Date().toISOString(),
+            backup_version: '1.0.1'
+          };
+          
+          // 백업 저장
+          localStorage.setItem('pkce_verifiers_backup', JSON.stringify(pkceData));
+          console.log('PKCE 검증기 백업 완료:', Object.keys(pkceData).length - 1, '개 항목');
+          
+          return true;
+        }
+        
+        return false;
+      } catch (e) {
+        console.error('PKCE 백업 생성 실패:', e);
+        return false;
+      }
+    };
+
+    try {
+      // 이전 인증 시도 확인
+      const { hasPkceItems } = checkPreviousAuthAttempts();
       
-      // 이메일 검증
-      if (!isValidEmail(email)) {
-        setError('유효한 이메일 주소를 입력해 주세요.');
-        setIsLoading(false);
+      // PKCE 데이터 백업
+      if (hasPkceItems) {
+        backupPkceVerifiers();
+      }
+
+      // 리다이렉트 URL 설정
+      const origin = window.location.origin;
+      const callbackUrl = `${origin}/auth/callback`;
+      
+      // auth.url 파라미터 (이메일 클라이언트에 표시될 URL) 설정
+      const authUrlParams = isShinhan
+        ? {
+            emailRedirectTo: callbackUrl,
+            auth: { 
+              url: callbackUrl,
+              redirectUrl: callbackUrl
+            }
+          }
+        : { emailRedirectTo: callbackUrl };
+      
+      // 디버깅을 위해 브라우저 정보 저장
+      const browserInfo = {
+        userAgent: navigator.userAgent,
+        platform: navigator.platform,
+        language: navigator.language
+      };
+      
+      // 로컬 스토리지에 리다이렉트 경로 저장
+      localStorage.setItem('auth_return_path', window.location.pathname);
+      
+      // 디버깅 정보 저장
+      saveDebugInfo({
+        callbackUrl,
+        isShinhan,
+        authUrlParams: JSON.stringify(authUrlParams),
+        browserInfo
+      });
+
+      console.log('인증 링크 전송 시도:', {
+        email,
+        callbackUrl,
+        isShinhan,
+        pkceBackedUp: hasPkceItems
+      });
+
+      // 개발 환경에서만 디버깅 정보 표시
+      if (process.env.NODE_ENV === 'development') {
+        setDebugState(prev => ({
+          ...prev,
+          auth_params: authUrlParams,
+          callback_url: callbackUrl,
+          is_shinhan: isShinhan,
+          browser_info: browserInfo
+        }));
+      }
+
+      // Supabase 매직 링크 인증 요청
+      const { error } = await supabase.auth.signInWithOtp({
+        email,
+        options: authUrlParams,
+      });
+
+      // 에러 처리
+      if (error) {
+        console.error('인증 링크 전송 오류:', error);
+        setError(`인증 링크 전송 중 오류가 발생했습니다: ${error.message}`);
         return;
       }
 
-      // 이메일 도메인 확인
-      const domain = getEmailDomain(email);
+      // 성공 토스트 메시지
+      toast({
+        title: '인증 링크가 전송되었습니다',
+        description: `${email}로 전송된 링크를 확인하세요.`,
+      });
       
-      // 신한 이메일 여부 확인
-      const isShinhanMail = domain === 'shinhan.com';
-      const isNaverMail = domain === 'naver.com';
+      // PKCE 백업 수행
+      backupPkceVerifiers();
       
-      // 결과 객체 초기화
-      let result;
+      // 추가 디버깅 정보 기록
+      saveDebugInfo({
+        status: 'success',
+        auth_request_completed: true
+      });
+
+    } catch (err: any) {
+      console.error('이메일 인증 오류:', err);
+      setError(`오류가 발생했습니다: ${err.message}`);
       
-      // 신한 메일인 경우 대체 인증 플로우 사용
-      if (isShinhanMail) {
-        console.log('신한 메일 감지 - 대체 인증 플로우 사용');
-        result = await useAlternativeAuthFlow(email);
-      } else {
-        // 일반 메일은 기존 방식 사용
-        result = await signInWithMagicLink(email);
-      }
-      
-      if (result.success) {
-        let successMessage = `인증 링크가 ${email}로 발송되었습니다. 이메일을 확인하고 링크를 클릭해주세요. (${MAGIC_LINK_EXPIRATION}분 이내)`;
-        
-        // 도메인별 추가 안내
-        if (isShinhanMail || result.isShinhanMail) {
-          successMessage += '\n\n⚠️ **신한 메일 사용자 필독**:\n1. 인증 메일이 스팸함에 이미지 형태로 수신될 수 있습니다.\n2. 원본 반입 후 **즉시** 링크를 클릭해 주세요.\n3. 링크 클릭 시 "code_verifier" 오류가 발생한다면 개인 이메일 사용을 권장합니다.';
-        } else if (isNaverMail) {
-          successMessage += '\n\n⚠️ **네이버 메일 사용자 안내**:\n1. 링크 클릭 시 "code_verifier" 오류가 발생할 수 있습니다.\n2. 이 경우 다른 브라우저에서 링크를 열거나 다른 이메일 계정 사용을 권장합니다.';
-        } else {
-          successMessage += '\n\n💡 **알림**: 만약 로그인 링크 클릭 후 오류가 발생한다면, 다른 브라우저에서 링크를 열어보세요.';
-        }
-        
-        setSuccess(successMessage);
-        
-        // 이메일 세션 저장
-        sessionStorage.setItem("pendingAuthEmail", email);
-        
-        // 디버깅 정보 표시 (개발 환경에서만)
-        if (process.env.NODE_ENV === 'development') {
-          console.log('이메일 인증 요청 성공:', {
-            email,
-            timestamp: new Date().toISOString(),
-            redirectUrl: `${siteUrl}/auth/callback`,
-            domain,
-            isShinhanMail,
-            isNaverMail,
-            useAlternativeFlow: isShinhanMail
-          });
-          
-          // 개발 환경에서 추가 디버깅 정보
-          setDebugInfo({
-            email,
-            timestamp: new Date().toISOString(),
-            domain,
-            emailType: isShinhanMail ? 'shinhan' : isNaverMail ? 'naver' : 'other',
-            authFlow: isShinhanMail ? 'alternative' : 'standard'
-          });
-        }
-      } else {
-        console.error('인증 이메일 발송 실패:', result.error);
-        setError('인증 이메일을 발송하는 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.');
-      }
-    } catch (error: any) {
-      console.error('인증 처리 오류:', error);
-      setError('인증 처리 중 오류가 발생했습니다: ' + (error.message || '알 수 없는 오류'));
+      // 오류 디버깅 정보 저장
+      saveDebugInfo({
+        status: 'error',
+        error: err.message
+      });
     } finally {
       setIsLoading(false);
     }
@@ -384,6 +517,16 @@ export function EmailForm() {
         <div className="mt-4 p-2 border border-gray-200 rounded text-xs overflow-auto bg-gray-50">
           <strong>디버그 정보:</strong>
           <pre className="mt-1">{JSON.stringify(debugInfo, null, 2)}</pre>
+        </div>
+      )}
+
+      {/* 개발 환경에서만 디버깅 정보 표시 */}
+      {process.env.NODE_ENV === 'development' && Object.keys(debug).length > 0 && (
+        <div className="mt-4 p-3 bg-gray-100 rounded text-xs font-mono">
+          <p className="font-bold mb-1">디버깅 정보:</p>
+          <pre className="whitespace-pre-wrap break-all">
+            {JSON.stringify(debug, null, 2)}
+          </pre>
         </div>
       )}
     </div>
