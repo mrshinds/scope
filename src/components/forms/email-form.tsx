@@ -21,6 +21,41 @@ const SITE_URL = 'https://scope-psi.vercel.app';
 // 매직 링크 만료 시간 (분)
 const MAGIC_LINK_EXPIRATION = 30; // 30분으로 늘림
 
+// 이메일 도메인 체크 함수
+const isNaverEmail = (email: string) => email.endsWith('@naver.com');
+const isShinhanEmail = (email: string) => email.endsWith('@shinhan.com');
+const isSpecialEmailDomain = (email: string) => isNaverEmail(email) || isShinhanEmail(email);
+
+// PKCE 코드 검증기 백업 함수 (여러 장소에 저장)
+const backupPkceVerifier = (codeVerifier: string) => {
+  try {
+    console.log('PKCE 검증기 백업 중...', codeVerifier.substring(0, 8) + '...');
+    
+    // 모든 가능한 저장소에 코드 검증기 저장
+    localStorage.setItem('supabase.auth.pkce.code_verifier', codeVerifier);
+    localStorage.setItem('supabase.auth.code_verifier', codeVerifier);
+    sessionStorage.setItem('supabase.auth.pkce.code_verifier', codeVerifier);
+    sessionStorage.setItem('supabase.auth.code_verifier', codeVerifier);
+    
+    // 쿠키에도 저장 (30분 유효)
+    Cookies.set('supabase.auth.pkce.code_verifier', codeVerifier, { expires: 1/48 });
+    Cookies.set('supabase.auth.code_verifier', codeVerifier, { expires: 1/48 });
+    
+    // 추가 백업 (디버깅 및 복구용)
+    const backupData = {
+      timestamp: new Date().toISOString(),
+      code_verifier: codeVerifier,
+      origin: window.location.origin
+    };
+    localStorage.setItem('pkce_verifiers_backup', JSON.stringify(backupData));
+    
+    return true;
+  } catch (e) {
+    console.error('코드 검증기 백업 실패:', e);
+    return false;
+  }
+};
+
 export function EmailForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
