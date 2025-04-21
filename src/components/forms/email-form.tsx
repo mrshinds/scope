@@ -13,6 +13,7 @@ import axios from "axios"
 import { useSupabase } from '@/app/supabase-provider'
 import { toast } from '../ui/use-toast'
 import { isShinhanEmail } from '@/lib/email-utils'
+import Cookies from 'js-cookie'
 
 // 배포 URL 설정 (배포 환경에서는 이 값으로 수정필요)
 const SITE_URL = 'https://scope-psi.vercel.app';
@@ -287,6 +288,21 @@ export function EmailForm() {
               pkceData[key] = value;
               pkceData[key + '_time'] = Date.now();
               foundVerifiers = true;
+              
+              // code_verifier 발견 시 세션스토리지와 쿠키에도 백업
+              if (key === 'supabase.auth.pkce.code_verifier' || key === 'supabase.auth.code_verifier') {
+                try {
+                  // 세션스토리지에 백업
+                  sessionStorage.setItem(key, value);
+                  
+                  // 쿠키에 백업 (1일 만료)
+                  Cookies.set(key, value, { expires: 1, path: '/' });
+                  
+                  console.log(`[PKCE 백업] ${key} 다중 저장소에 백업 완료`);
+                } catch (backupError) {
+                  console.error('[PKCE 백업] 다중 저장소 백업 실패:', backupError);
+                }
+              }
             }
           }
         }
@@ -296,7 +312,7 @@ export function EmailForm() {
           pkceData['_meta'] = {
             email,
             created_at: new Date().toISOString(),
-            backup_version: '1.0.1'
+            backup_version: '1.0.2'
           };
           
           // 백업 저장
