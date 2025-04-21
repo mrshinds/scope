@@ -14,6 +14,7 @@ import { useSupabase } from '@/app/supabase-provider'
 import { toast } from '../ui/use-toast'
 import { isShinhanEmail } from '@/lib/email-utils'
 import Cookies from 'js-cookie'
+import { createClientComponentClient } from '@supabase/auth-helpers-nextjs'
 
 // 배포 URL 설정 (배포 환경에서는 이 값으로 수정필요)
 const SITE_URL = 'https://scope-psi.vercel.app';
@@ -56,7 +57,7 @@ const backupPkceVerifier = (codeVerifier: string) => {
   }
 };
 
-export function EmailForm() {
+export default function EmailForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { supabase } = useSupabase();
@@ -67,6 +68,7 @@ export function EmailForm() {
   const [apiUrl, setApiUrl] = useState("");
   const [debugInfo, setDebugInfo] = useState<any>(null);
   const [debug, setDebugState] = useState<Record<string, any>>({});
+  const supabaseClient = createClientComponentClient();
 
   // URL 파라미터에서 오류 메시지 확인 및 auth.url 파라미터 확인
   useEffect(() => {
