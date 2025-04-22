@@ -27,35 +27,37 @@ const isNaverEmail = (email: string) => email.endsWith('@naver.com');
 const isShinhanEmail = (email: string) => email.endsWith('@shinhan.com');
 const isSpecialEmailDomain = (email: string) => isNaverEmail(email) || isShinhanEmail(email);
 
-// PKCE 코드 검증기 백업 함수 (여러 장소에 저장)
+// PKCE 코드 검증기 생성 함수
+const generateCodeVerifier = () => {
+  const array = new Uint8Array(32)
+  crypto.getRandomValues(array)
+  return btoa(String.fromCharCode.apply(null, array))
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/, '')
+}
+
+// PKCE 코드 검증기 백업 함수
 const backupPkceVerifier = (codeVerifier: string) => {
   try {
-    console.log('PKCE 검증기 백업 중...', codeVerifier.substring(0, 8) + '...');
+    console.log('PKCE 검증기 백업 중...', codeVerifier.substring(0, 8) + '...')
     
     // 모든 가능한 저장소에 코드 검증기 저장
-    localStorage.setItem('supabase.auth.pkce.code_verifier', codeVerifier);
-    localStorage.setItem('supabase.auth.code_verifier', codeVerifier);
-    sessionStorage.setItem('supabase.auth.pkce.code_verifier', codeVerifier);
-    sessionStorage.setItem('supabase.auth.code_verifier', codeVerifier);
+    localStorage.setItem('supabase.auth.pkce.code_verifier', codeVerifier)
+    localStorage.setItem('supabase.auth.code_verifier', codeVerifier)
+    sessionStorage.setItem('supabase.auth.pkce.code_verifier', codeVerifier)
+    sessionStorage.setItem('supabase.auth.code_verifier', codeVerifier)
     
     // 쿠키에도 저장 (30분 유효)
-    Cookies.set('supabase.auth.pkce.code_verifier', codeVerifier, { expires: 1/48 });
-    Cookies.set('supabase.auth.code_verifier', codeVerifier, { expires: 1/48 });
+    Cookies.set('supabase.auth.pkce.code_verifier', codeVerifier, { expires: 1/48 })
+    Cookies.set('supabase.auth.code_verifier', codeVerifier, { expires: 1/48 })
     
-    // 추가 백업 (디버깅 및 복구용)
-    const backupData = {
-      timestamp: new Date().toISOString(),
-      code_verifier: codeVerifier,
-      origin: window.location.origin
-    };
-    localStorage.setItem('pkce_verifiers_backup', JSON.stringify(backupData));
-    
-    return true;
+    return true
   } catch (e) {
-    console.error('코드 검증기 백업 실패:', e);
-    return false;
+    console.error('코드 검증기 백업 실패:', e)
+    return false
   }
-};
+}
 
 export default function EmailForm() {
   const router = useRouter();
@@ -242,201 +244,35 @@ export default function EmailForm() {
 
     setIsLoading(true);
 
-    // 신한은행 이메일 도메인인지 확인
-    const isShinhan = isShinhanEmail(email);
-
-    // 디버깅 정보를 로컬 스토리지에 저장
-    const saveDebugInfo = (data: Record<string, any>) => {
-      try {
-        // 로컬 스토리지에 이메일 저장
-        localStorage.setItem('auth_email', email);
-        localStorage.setItem('auth_timestamp', new Date().toISOString());
-        
-        // 디버깅 정보 저장
-        localStorage.setItem('email_debug_info', JSON.stringify({
-          email,
-          isShinhan,
-          timestamp: new Date().toISOString(),
-          ...data
-        }));
-        
-        // PKCE 백업 상태 확인
-        const pkceBackup = localStorage.getItem('pkce_verifiers_backup');
-        setDebugState(prev => ({
-          ...prev,
-          email,
-          isShinhan,
-          has_pkce_backup: !!pkceBackup,
-          timestamp: new Date().toISOString()
-        }));
-      } catch (e) {
-        console.error('디버깅 정보 저장 실패:', e);
-      }
-    };
-
-    // 백업된 PKCE 정보가 있는지 확인하고, 이전에 실패한 인증 시도가 있다면 정보 저장
-    const checkPreviousAuthAttempts = () => {
-      try {
-        // 모든 PKCE 관련 항목 찾기
-        const pkceItems: Record<string, any> = {};
-        let foundVerifiers = false;
-        
-        for (let i = 0; i < localStorage.length; i++) {
-          const key = localStorage.key(i);
-          if (key && (key.includes('pkce') || key.includes('code_verifier'))) {
-            const value = localStorage.getItem(key);
-            pkceItems[key] = value ? (value.length > 10 ? `${value.substring(0, 10)}...` : value) : null;
-            foundVerifiers = true;
-          }
-        }
-        
-        // 이전 인증 시도 정보
-        const lastError = localStorage.getItem('auth_last_error');
-        
-        setDebugState(prev => ({
-          ...prev,
-          found_pkce_items: foundVerifiers,
-          pkce_items_count: Object.keys(pkceItems).length,
-          has_previous_error: !!lastError
-        }));
-        
-        return {
-          hasPkceItems: foundVerifiers,
-          lastError: lastError ? JSON.parse(lastError) : null
-        };
-      } catch (e) {
-        console.error('이전 인증 시도 확인 오류:', e);
-        return { hasPkceItems: false, lastError: null };
-      }
-    };
-
-    // PKCE 백업 생성
-    const backupPkceVerifiers = () => {
-      try {
-        const pkceData: Record<string, any> = {};
-        let foundVerifiers = false;
-        
-        // 모든 PKCE 관련 정보 수집
-        for (let i = 0; i < localStorage.length; i++) {
-          const key = localStorage.key(i);
-          if (key && (key.includes('pkce') || key.includes('code_verifier'))) {
-            const value = localStorage.getItem(key);
-            if (value) {
-              pkceData[key] = value;
-              pkceData[key + '_time'] = Date.now();
-              foundVerifiers = true;
-              
-              // code_verifier 발견 시 세션스토리지와 쿠키에도 백업
-              if (key === 'supabase.auth.pkce.code_verifier' || key === 'supabase.auth.code_verifier') {
-                try {
-                  // 세션스토리지에 백업
-                  sessionStorage.setItem(key, value);
-                  
-                  // 쿠키에 백업 (1일 만료)
-                  Cookies.set(key, value, { expires: 1, path: '/' });
-                  
-                  console.log(`[PKCE 백업] ${key} 다중 저장소에 백업 완료`);
-                } catch (backupError) {
-                  console.error('[PKCE 백업] 다중 저장소 백업 실패:', backupError);
-                }
-              }
-            }
-          }
-        }
-        
-        // 백업 데이터에 메타데이터 추가
-        if (foundVerifiers) {
-          pkceData['_meta'] = {
-            email,
-            created_at: new Date().toISOString(),
-            backup_version: '1.0.2'
-          };
-          
-          // 백업 저장
-          localStorage.setItem('pkce_verifiers_backup', JSON.stringify(pkceData));
-          console.log('PKCE 검증기 백업 완료:', Object.keys(pkceData).length - 1, '개 항목');
-          
-          return true;
-        }
-        
-        return false;
-      } catch (e) {
-        console.error('PKCE 백업 생성 실패:', e);
-        return false;
-      }
-    };
-
     try {
-      // 이전 인증 시도 확인
-      const { hasPkceItems } = checkPreviousAuthAttempts();
+      // PKCE 코드 검증기 생성 및 백업
+      const codeVerifier = generateCodeVerifier();
+      const backupSuccess = backupPkceVerifier(codeVerifier);
       
-      // PKCE 데이터 백업
-      if (hasPkceItems) {
-        backupPkceVerifiers();
+      if (!backupSuccess) {
+        throw new Error('코드 검증기 백업에 실패했습니다.');
       }
 
-      // 리다이렉트 URL 설정
-      const origin = window.location.origin;
-      const callbackUrl = `${origin}/auth/callback`;
-      
-      // auth.url 파라미터 (이메일 클라이언트에 표시될 URL) 설정
-      const authUrlParams = isShinhan
-        ? {
-            emailRedirectTo: callbackUrl,
-            auth: { 
-              url: callbackUrl,
-              redirectUrl: callbackUrl
-            }
-          }
-        : { emailRedirectTo: callbackUrl };
-      
-      // 디버깅을 위해 브라우저 정보 저장
-      const browserInfo = {
-        userAgent: navigator.userAgent,
-        platform: navigator.platform,
-        language: navigator.language
-      };
-      
-      // 로컬 스토리지에 리다이렉트 경로 저장
-      localStorage.setItem('auth_return_path', window.location.pathname);
-      
-      // 디버깅 정보 저장
-      saveDebugInfo({
-        callbackUrl,
-        isShinhan,
-        authUrlParams: JSON.stringify(authUrlParams),
-        browserInfo
-      });
+      // 리디렉트 URL 설정
+      const redirect = searchParams.get('redirect') || '/dashboard';
+      const callbackUrl = `${window.location.origin}/auth/callback?redirect=${encodeURIComponent(redirect)}`;
 
-      console.log('인증 링크 전송 시도:', {
+      console.log('인증 요청 정보:', {
         email,
         callbackUrl,
-        isShinhan,
-        pkceBackedUp: hasPkceItems
+        codeVerifier: codeVerifier.substring(0, 8) + '...'
       });
-
-      // 개발 환경에서만 디버깅 정보 표시
-      if (process.env.NODE_ENV === 'development') {
-        setDebugState(prev => ({
-          ...prev,
-          auth_params: authUrlParams,
-          callback_url: callbackUrl,
-          is_shinhan: isShinhan,
-          browser_info: browserInfo
-        }));
-      }
 
       // Supabase 매직 링크 인증 요청
       const { error } = await supabase.auth.signInWithOtp({
         email,
-        options: authUrlParams,
+        options: {
+          emailRedirectTo: callbackUrl
+        }
       });
 
-      // 에러 처리
       if (error) {
-        console.error('인증 링크 전송 오류:', error);
-        setError(`인증 링크 전송 중 오류가 발생했습니다: ${error.message}`);
-        return;
+        throw error;
       }
 
       // 성공 토스트 메시지
@@ -444,25 +280,10 @@ export default function EmailForm() {
         title: '인증 링크가 전송되었습니다',
         description: `${email}로 전송된 링크를 확인하세요.`,
       });
-      
-      // PKCE 백업 수행
-      backupPkceVerifiers();
-      
-      // 추가 디버깅 정보 기록
-      saveDebugInfo({
-        status: 'success',
-        auth_request_completed: true
-      });
 
     } catch (err: any) {
       console.error('이메일 인증 오류:', err);
       setError(`오류가 발생했습니다: ${err.message}`);
-      
-      // 오류 디버깅 정보 저장
-      saveDebugInfo({
-        status: 'error',
-        error: err.message
-      });
     } finally {
       setIsLoading(false);
     }

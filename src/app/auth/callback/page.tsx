@@ -12,8 +12,15 @@ export default function AuthCallback() {
 
   useEffect(() => {
     const handleCallback = async () => {
+      // URL 파라미터에서 필요한 값 추출
       const code = searchParams.get('code');
       const redirectTo = searchParams.get('redirect') || '/dashboard';
+      
+      // 해시에서 토큰 추출
+      const hash = window.location.hash.substring(1);
+      const params = new URLSearchParams(hash);
+      const access_token = params.get('access_token');
+      const refresh_token = params.get('refresh_token');
 
       // code_verifier 복원 시도
       const codeVerifier =
@@ -22,12 +29,16 @@ export default function AuthCallback() {
         Cookies.get('supabase.auth.code_verifier');
 
       // 디버깅을 위한 로그
+      console.log('hash:', window.location.hash);
+      console.log('redirectTo:', redirectTo);
       console.log('code:', code);
       console.log('code_verifier:', codeVerifier?.slice(0, 8));
-      console.log('redirectTo:', redirectTo);
+      console.log('access_token:', access_token?.slice(0, 8));
+      console.log('refresh_token:', refresh_token?.slice(0, 8));
 
-      if (code && codeVerifier) {
-        try {
+      try {
+        if (code && codeVerifier) {
+          // PKCE 흐름으로 세션 교환
           const { error } = await supabase.auth.exchangeCodeForSession(code, codeVerifier);
           
           if (error) {
@@ -39,15 +50,25 @@ export default function AuthCallback() {
           sessionStorage.removeItem('supabase.auth.code_verifier');
           Cookies.remove('supabase.auth.code_verifier');
 
-          // 성공적인 인증 후 리디렉션
           router.push(redirectTo);
-        } catch (error) {
-          console.error('Session exchange error:', error);
-          router.push(`/login?error=exchange_failed&redirect=${encodeURIComponent(redirectTo)}`);
+        } else if (access_token && refresh_token) {
+          // 토큰으로 직접 세션 설정
+          const { error } = await supabase.auth.setSession({
+            access_token,
+            refresh_token
+          });
+
+          if (error) {
+            throw error;
+          }
+
+          router.push(redirectTo);
+        } else {
+          throw new Error('인증에 필요한 파라미터가 없습니다');
         }
-      } else {
-        console.error('Missing code or code_verifier');
-        router.push(`/login?error=missing_params&redirect=${encodeURIComponent(redirectTo)}`);
+      } catch (error) {
+        console.error('인증 처리 오류:', error);
+        router.push(`/login?error=exchange_failed&redirect=${encodeURIComponent(redirectTo)}`);
       }
     };
 
