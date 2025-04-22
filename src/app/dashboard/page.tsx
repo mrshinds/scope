@@ -24,6 +24,7 @@ import ArticleCard from '@/components/article-card';
 import { supabase } from '@/lib/supabase';
 import { DashboardLayout } from '@/components/layout/dashboard-layout';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
+import { toast } from 'sonner';
 
 export default function DashboardPage() {
   const router = useRouter();
@@ -45,23 +46,32 @@ export default function DashboardPage() {
   useEffect(() => {
     const checkSession = async () => {
       try {
-        const { data: { session } } = await supabase.auth.getSession();
-        
-        if (!session) {
-          console.log('세션 없음, 로그인 페이지로 리디렉션');
-          router.replace(`/login?redirect=${encodeURIComponent(pathname)}`);
-        } else {
-          console.log('세션 확인됨, 대시보드 페이지 유지');
-          setUser(session.user);
+        const { data: { session }, error } = await supabase.auth.getSession();
+
+        if (error) {
+          throw error;
         }
-      } catch (error) {
-        console.error('세션 확인 오류:', error);
-        router.replace(`/login?error=session_check_failed&redirect=${encodeURIComponent(pathname)}`);
+
+        if (!session) {
+          // 세션이 없으면 로그인 페이지로 리디렉트
+          const redirectUrl = encodeURIComponent(pathname);
+          router.push(`/login?redirect=${redirectUrl}`);
+          toast.error('로그인이 필요합니다');
+          return;
+        }
+
+        // 세션이 있으면 대시보드 표시
+        console.log('세션 확인됨:', session.user.email);
+        setUser(session.user);
+      } catch (error: any) {
+        console.error('세션 검증 오류:', error);
+        router.push('/login');
+        toast.error('세션 검증 중 오류가 발생했습니다');
       }
     };
 
     checkSession();
-  }, []);
+  }, [router, pathname, supabase]);
 
   // 로그인 성공 메시지 표시 후 자동으로 숨김
   useEffect(() => {

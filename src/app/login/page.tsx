@@ -3,9 +3,10 @@
 import { useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
+import { toast } from 'sonner';
 import EmailForm from '@/components/forms/email-form';
 
-export default function LoginPage() {
+export default function Login() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const supabase = createClientComponentClient();
@@ -13,29 +14,41 @@ export default function LoginPage() {
   useEffect(() => {
     const checkSession = async () => {
       try {
-        const { data: { session } } = await supabase.auth.getSession();
-        
-        if (session) {
-          const redirectTo = searchParams.get('redirect') || '/dashboard';
-          console.log('세션 확인됨, 리디렉션:', redirectTo);
-          router.replace(redirectTo);
-        } else {
-          console.log('세션 없음, 로그인 페이지 유지');
+        const { data: { session }, error } = await supabase.auth.getSession();
+
+        if (error) {
+          throw error;
         }
-      } catch (error) {
-        console.error('세션 확인 오류:', error);
+
+        if (session) {
+          const redirect = searchParams.get('redirect') || '/dashboard';
+          router.push(redirect);
+          return;
+        }
+
+        const errorMessage = searchParams.get('error');
+        if (errorMessage) {
+          toast.error('로그인 오류', {
+            description: decodeURIComponent(errorMessage)
+          });
+        }
+      } catch (error: any) {
+        console.error('세션 검증 오류:', error);
+        toast.error('세션 검증 중 오류가 발생했습니다');
       }
     };
 
     checkSession();
-  }, []);
+  }, [router, searchParams, supabase]);
 
   return (
-    <div className="container mx-auto px-4 py-8">
-      <div className="max-w-md mx-auto">
-        <div className="text-center mb-8">
-          <h1 className="text-2xl font-bold mb-2">🔐 로그인</h1>
-          <p className="text-gray-600">이메일을 입력하여 인증을 진행해 주세요.</p>
+    <div className="flex min-h-screen items-center justify-center bg-gray-50">
+      <div className="w-full max-w-md space-y-8 p-8 bg-white rounded-lg shadow">
+        <div className="text-center">
+          <h1 className="text-2xl font-bold">로그인</h1>
+          <p className="mt-2 text-gray-600">
+            이메일로 전송된 인증 링크를 통해 로그인하세요
+          </p>
         </div>
         <EmailForm />
       </div>
