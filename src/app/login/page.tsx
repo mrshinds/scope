@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import { toast } from 'sonner';
@@ -22,6 +22,62 @@ export default function Login() {
   const [loading, setLoading] = useState(false);
   const [showOtpInput, setShowOtpInput] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [authInProgress, setAuthInProgress] = useState(false);
+  const [redirectTarget, setRedirectTarget] = useState<string | null>(null);
+
+  // 인증 상태 변화 감지
+  useEffect(() => {
+    if (!authInProgress) return;
+
+    const { data: authListener } = supabase.auth.onAuthStateChange(
+      (event, session) => {
+        console.log('인증 상태 변경:', event, session?.user?.email);
+        
+        if (event === 'SIGNED_IN' && session) {
+          console.log('세션 생성 확인:', session.user.email);
+          
+          // 리다이렉트 실행
+          if (redirectTarget) {
+            toast.success('로그인 성공', {
+              description: '대시보드로 이동합니다.'
+            });
+            
+            // 페이지 리로드 방식으로 리다이렉트 (세션 적용을 위해)
+            window.location.href = redirectTarget;
+          }
+        }
+      }
+    );
+
+    return () => {
+      authListener.subscription.unsubscribe();
+    };
+  }, [authInProgress, redirectTarget, supabase]);
+
+  // 이미 로그인되어 있는지 확인
+  useEffect(() => {
+    const checkExistingSession = async () => {
+      try {
+        const { data: { session }, error } = await supabase.auth.getSession();
+        
+        if (error) {
+          console.error('세션 확인 오류:', error);
+          return;
+        }
+        
+        // 이미 로그인된 경우 대시보드로 이동
+        if (session) {
+          console.log('이미 로그인된 세션 발견:', session.user.email);
+          const redirect = searchParams?.get('redirect') || '/dashboard';
+          window.location.href = redirect;
+        }
+      } catch (error) {
+        console.error('세션 검증 오류:', error);
+      }
+    };
+    
+    checkExistingSession();
+  }, [searchParams, supabase]);
 
   // OTP 코드 요청
   const handleOtpRequest = async (e: React.FormEvent) => {
@@ -60,8 +116,10 @@ export default function Login() {
     e.preventDefault();
     setLoading(true);
     setError(null);
+    setAuthInProgress(true);
 
     try {
+      // 인증 진행
       const { data, error } = await supabase.auth.verifyOtp({
         email,
         token: otp,
@@ -70,21 +128,26 @@ export default function Login() {
 
       if (error) throw error;
 
-      // 사용자 정보 확인
-      const { data: { user } } = await supabase.auth.getUser();
+      // 즉시 세션 확인
+      const { data: sessionData } = await supabase.auth.getSession();
+      const { data: userData } = await supabase.auth.getUser();
       
-      if (!user) throw new Error('사용자 정보를 가져올 수 없습니다');
+      if (!sessionData.session || !userData.user) {
+        throw new Error('세션 정보를 가져올 수 없습니다. 다시 로그인해주세요.');
+      }
 
+      console.log('OTP 검증 성공, 세션 정보:', userData.user.email);
+      
       // 비밀번호 설정 여부 확인
-      const hasPassword = user.user_metadata?.password_set;
+      const hasPassword = userData.user.user_metadata?.password_set;
       
       if (!hasPassword) {
         // 비밀번호 설정 페이지로 이동
-        router.push('/set-password');
+        window.location.href = '/set-password';
       } else {
         // 대시보드로 이동
         const redirect = searchParams?.get('redirect') || '/dashboard';
-        router.push(redirect);
+        setRedirectTarget(redirect);
       }
 
     } catch (error: any) {
@@ -93,6 +156,7 @@ export default function Login() {
       toast.error('인증 실패', {
         description: error.message
       });
+      setAuthInProgress(false);
     } finally {
       setLoading(false);
     }
@@ -103,8 +167,17 @@ export default function Login() {
     e.preventDefault();
     setLoading(true);
     setError(null);
+    setAuthInProgress(true);
 
     try {
+      // 리다이렉트 경로 미리 결정
+      const redirect = searchParams?.get('redirect') || '/dashboard';
+      setRedirectTarget(redirect);
+      
+      console.log('로그인 시도:', email);
+      console.log('리다이렉트 대상:', redirect);
+      
+      // 인증 시도
       const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password
@@ -116,28 +189,31 @@ export default function Login() {
         }
         throw error;
       }
-
-      // 명시적으로 세션 검증
+      
+      // 바로 세션 확인 (onAuthStateChange 이벤트와 별개로)
+      if (!data.session) {
+        throw new Error('로그인은 성공했으나 세션이 생성되지 않았습니다. 다시 시도해주세요.');
+      }
+      
+      console.log('로그인 즉시 세션 확인:', data.session.user.email);
+      
+      // 세션 값이 존재하는지 한번 더 확인 
       const { data: sessionData } = await supabase.auth.getSession();
       
       if (!sessionData.session) {
-        throw new Error('세션 생성에 실패했습니다. 다시 로그인해주세요.');
-      }
-
-      console.log('로그인 성공, 세션 정보:', sessionData.session.user.email);
-      
-      // 성공 메시지 표시
-      toast.success('로그인 성공', {
-        description: '대시보드로 이동합니다.'
-      });
-      
-      // 명시적인 리다이렉트 (쿼리 파라미터 사용)
-      const redirect = searchParams?.get('redirect') || '/dashboard';
-      
-      // 1초 후 리다이렉트하여 토스트 메시지가 보이도록 함
-      setTimeout(() => {
+        console.warn('getSession()에서 세션을 찾을 수 없습니다.');
+        // 여기서 에러를 발생시키지 않고 onAuthStateChange 이벤트를 기다림
+      } else {
+        console.log('getSession()에서 세션 확인됨:', sessionData.session.user.email);
+        
+        // 성공 메시지 표시
+        toast.success('로그인 성공', {
+          description: '대시보드로 이동합니다.'
+        });
+        
+        // 세션이 확인되면 바로 리다이렉트
         window.location.href = redirect;
-      }, 1000);
+      }
 
     } catch (error: any) {
       console.error('로그인 오류:', error);
@@ -145,6 +221,7 @@ export default function Login() {
       toast.error('로그인 실패', {
         description: error.message
       });
+      setAuthInProgress(false);
     } finally {
       setLoading(false);
     }

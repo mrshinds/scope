@@ -46,32 +46,57 @@ export default function DashboardPage() {
   useEffect(() => {
     const checkSession = async () => {
       try {
+        // 1. 먼저 현재 세션 확인
         const { data: { session }, error } = await supabase.auth.getSession();
 
         if (error) {
           throw error;
         }
 
-        if (!session) {
-          // 세션이 없으면 로그인 페이지로 리디렉트
-          const redirectUrl = encodeURIComponent(pathname);
-          router.push(`/login?redirect=${redirectUrl}`);
-          toast.error('로그인이 필요합니다');
-          return;
+        if (session) {
+          // 세션이 있으면 대시보드 표시
+          console.log('세션 확인됨:', session.user.email);
+          setUser(session.user);
+          return; // 성공적으로 세션이 확인됨
         }
-
-        // 세션이 있으면 대시보드 표시
-        console.log('세션 확인됨:', session.user.email);
-        setUser(session.user);
+        
+        // 세션이 없는 경우 로그인 페이지로 리다이렉트
+        const redirectUrl = encodeURIComponent(pathname || '/dashboard');
+        console.log('세션이 없음, 로그인 페이지로 리다이렉트');
+        window.location.href = `/login?redirect=${redirectUrl}`;
+        return;
       } catch (error: any) {
         console.error('세션 검증 오류:', error);
-        router.push('/login');
+        window.location.href = '/login';
         toast.error('세션 검증 중 오류가 발생했습니다');
       }
     };
 
+    // 2. 인증 상태 변경 이벤트 리스너 설정
+    const { data: authListener } = supabase.auth.onAuthStateChange(
+      async (event, session) => {
+        console.log('대시보드 인증 상태 변경:', event);
+        
+        if (event === 'SIGNED_IN' && session) {
+          // 로그인 시 사용자 정보 업데이트
+          console.log('로그인 이벤트 감지:', session.user.email);
+          setUser(session.user);
+        } else if (event === 'SIGNED_OUT') {
+          // 로그아웃 시 로그인 페이지로 리다이렉트
+          console.log('로그아웃 이벤트 감지');
+          window.location.href = '/login';
+        }
+      }
+    );
+
+    // 초기 세션 확인 실행
     checkSession();
-  }, [router, pathname, supabase]);
+
+    // 리스너 정리
+    return () => {
+      authListener.subscription.unsubscribe();
+    };
+  }, [pathname, supabase]);
 
   // 로그인 성공 메시지 표시 후 자동으로 숨김
   useEffect(() => {
@@ -93,13 +118,17 @@ export default function DashboardPage() {
       const { error } = await supabase.auth.signOut();
       if (error) {
         console.error('로그아웃 오류:', error);
+        toast.error('로그아웃 처리 중 오류가 발생했습니다.');
         return;
       }
 
       // 로그아웃 성공 시 로그인 페이지로 이동
-      router.push('/login');
+      console.log('로그아웃 성공');
+      toast.success('로그아웃 되었습니다');
+      window.location.href = '/login';
     } catch (error) {
       console.error('로그아웃 처리 중 오류:', error);
+      toast.error('로그아웃 처리 중 오류가 발생했습니다.');
     }
   };
 

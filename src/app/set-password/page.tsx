@@ -17,40 +17,73 @@ export default function SetPassword() {
   const [confirmPassword, setConfirmPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [user, setUser] = useState<any>(null)
 
-  // 세션 확인
+  // 세션 확인 및 인증 상태 변화 감지
   useEffect(() => {
     const checkSession = async () => {
       try {
         const { data: { session }, error } = await supabase.auth.getSession()
 
         if (error) throw error
+        
         if (!session) {
-          router.push('/login')
-          toast.error('로그인이 필요합니다')
+          console.log('세션이 없음, 로그인 페이지로 리다이렉트')
+          window.location.href = '/login'
           return
         }
 
+        // 사용자 정보 설정
+        setUser(session.user)
+        
         // 이미 비밀번호가 설정된 경우
         const hasPassword = session.user.user_metadata?.password_set
         if (hasPassword) {
-          router.push('/dashboard')
+          console.log('이미 비밀번호가 설정됨, 대시보드로 이동')
+          window.location.href = '/dashboard'
           return
         }
-
       } catch (error: any) {
         console.error('세션 확인 오류:', error)
-        router.push('/login')
+        window.location.href = '/login'
         toast.error('세션 확인 중 오류가 발생했습니다')
       }
     }
 
+    // 인증 상태 변경 리스너 설정
+    const { data: authListener } = supabase.auth.onAuthStateChange(
+      async (event, session) => {
+        console.log('인증 상태 변경:', event)
+        
+        if (event === 'SIGNED_OUT') {
+          // 로그아웃 시 로그인 페이지로 리다이렉트
+          window.location.href = '/login'
+        } else if (session) {
+          // 세션 존재 시 사용자 정보 업데이트
+          setUser(session.user)
+        }
+      }
+    )
+
+    // 초기 세션 확인
     checkSession()
-  }, [router, supabase])
+
+    // 리스너 정리
+    return () => {
+      authListener.subscription.unsubscribe()
+    }
+  }, [supabase])
 
   // 비밀번호 설정
   const handleSetPassword = async (e: React.FormEvent) => {
     e.preventDefault()
+    
+    if (!user) {
+      toast.error('사용자 정보를 찾을 수 없습니다')
+      window.location.href = '/login'
+      return
+    }
+    
     setLoading(true)
     setError(null)
 
@@ -64,6 +97,8 @@ export default function SetPassword() {
         throw new Error('비밀번호가 일치하지 않습니다')
       }
 
+      console.log('비밀번호 업데이트 중...')
+      
       // 비밀번호 업데이트
       const { error } = await supabase.auth.updateUser({
         password,
@@ -72,8 +107,26 @@ export default function SetPassword() {
 
       if (error) throw error
 
-      toast.success('비밀번호가 설정되었습니다')
-      router.push('/dashboard')
+      console.log('비밀번호 설정 완료')
+      
+      // 세션 다시 확인
+      const { data: { session } } = await supabase.auth.getSession()
+      
+      if (!session) {
+        console.warn('비밀번호 설정 후 세션을 찾을 수 없음')
+      } else {
+        console.log('세션 확인됨:', session.user.email)
+      }
+
+      // 성공 메시지
+      toast.success('비밀번호가 설정되었습니다', {
+        description: '대시보드로 이동합니다'
+      })
+      
+      // 페이지 리로드 방식으로 리다이렉트
+      setTimeout(() => {
+        window.location.href = '/dashboard'
+      }, 500)
 
     } catch (error: any) {
       console.error('비밀번호 설정 오류:', error)
