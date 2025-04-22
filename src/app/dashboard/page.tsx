@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { useSearchParams, useRouter, usePathname } from 'next/navigation';
+import { useState, useEffect, Suspense } from 'react';
+import { usePathname } from 'next/navigation';
 import Link from 'next/link';
 import { 
   Card, 
@@ -26,12 +26,15 @@ import { DashboardLayout } from '@/components/layout/dashboard-layout';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import { toast } from 'sonner';
 
-export default function DashboardPage() {
-  const router = useRouter();
+// SearchParams 사용 컴포넌트를 별도로 분리
+import { useSearchParams } from 'next/navigation';
+
+function DashboardContent() {
   const searchParams = useSearchParams();
+  const pathname = usePathname();
   const tagFilter = searchParams ? searchParams.get('tag') : null;
   const loginSuccess = searchParams ? searchParams.get('login_success') === 'true' : false;
-  const pathname = usePathname();
+  
   const supabase = createClientComponentClient();
   
   const [articles, setArticles] = useState<any[]>([]);
@@ -384,5 +387,19 @@ export default function DashboardPage() {
         </div>
       </div>
     </DashboardLayout>
+  );
+}
+
+// 메인 대시보드 페이지 컴포넌트
+export default function DashboardPage() {
+  return (
+    <Suspense fallback={
+      <div className="flex justify-center items-center py-12">
+        <Loader2 className="h-6 w-6 animate-spin mr-2" />
+        <span>페이지를 불러오는 중...</span>
+      </div>
+    }>
+      <DashboardContent />
+    </Suspense>
   );
 } 
