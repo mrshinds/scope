@@ -1,33 +1,25 @@
-import type { Metadata } from 'next'
-import { Inter as FontSans } from 'next/font/google'
-import './globals-new.css'
-import { cn } from '@/lib/utils'
+import './globals.css';
+import { Inter } from 'next/font/google';
+import { Toaster } from 'sonner';
 
-export const dynamic = 'force-dynamic';
+const inter = Inter({ subsets: ['latin'] });
 
-const fontSans = FontSans({
-  subsets: ['latin'],
-  variable: '--font-sans',
-})
-
-export const metadata: Metadata = {
-  title: 'SCOPE - 신한은행 소비자보호부 이슈 감지 플랫폼',
-  description: '신한은행 소비자보호부 내부 직원용 이슈 감지 플랫폼',
-}
+export const metadata = {
+  title: 'SCOPE - 금융 규제 정보 플랫폼',
+  description: '최신 금융 규제 및 정책 정보를 한 곳에서 확인하세요.',
+};
 
 export default function RootLayout({
   children,
-}: Readonly<{
-  children: React.ReactNode
-}>) {
+}: {
+  children: React.ReactNode;
+}) {
   return (
-    <html lang="ko" suppressHydrationWarning>
-      <body className={cn(
-        "min-h-screen bg-background font-sans antialiased",
-        fontSans.variable
-      )}>
-        {children}
+    <html lang="ko">
+      <body className={inter.className}>
+        <main>{children}</main>
+        <Toaster position="top-right" />
       </body>
     </html>
-  )
+  );
 } 
