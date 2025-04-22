@@ -83,7 +83,7 @@ export default function Login() {
         router.push('/set-password');
       } else {
         // 대시보드로 이동
-        const redirect = searchParams.get('redirect') || '/dashboard';
+        const redirect = searchParams?.get('redirect') || '/dashboard';
         router.push(redirect);
       }
 
@@ -105,16 +105,29 @@ export default function Login() {
     setError(null);
 
     try {
-      const { error } = await supabase.auth.signInWithPassword({
+      const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password
       });
 
-      if (error) throw error;
+      if (error) {
+        if (error.message.includes('Invalid login credentials')) {
+          throw new Error('이메일 또는 비밀번호가 올바르지 않습니다.');
+        }
+        throw error;
+      }
 
-      const redirect = searchParams.get('redirect') || '/dashboard';
+      // 명시적으로 리다이렉트 처리
+      const redirect = searchParams?.get('redirect') || '/dashboard';
+      console.log('리다이렉트 경로:', redirect);
+      
+      // 성공 메시지 표시
+      toast.success('로그인 성공', {
+        description: '대시보드로 이동합니다.'
+      });
+      
+      // 즉시 리다이렉트 수행
       router.push(redirect);
-      toast.success('로그인 성공');
 
     } catch (error: any) {
       console.error('로그인 오류:', error);
