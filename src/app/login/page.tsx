@@ -117,17 +117,27 @@ export default function Login() {
         throw error;
       }
 
-      // 명시적으로 리다이렉트 처리
-      const redirect = searchParams?.get('redirect') || '/dashboard';
-      console.log('리다이렉트 경로:', redirect);
+      // 명시적으로 세션 검증
+      const { data: sessionData } = await supabase.auth.getSession();
+      
+      if (!sessionData.session) {
+        throw new Error('세션 생성에 실패했습니다. 다시 로그인해주세요.');
+      }
+
+      console.log('로그인 성공, 세션 정보:', sessionData.session.user.email);
       
       // 성공 메시지 표시
       toast.success('로그인 성공', {
         description: '대시보드로 이동합니다.'
       });
       
-      // 즉시 리다이렉트 수행
-      router.push(redirect);
+      // 명시적인 리다이렉트 (쿼리 파라미터 사용)
+      const redirect = searchParams?.get('redirect') || '/dashboard';
+      
+      // 1초 후 리다이렉트하여 토스트 메시지가 보이도록 함
+      setTimeout(() => {
+        window.location.href = redirect;
+      }, 1000);
 
     } catch (error: any) {
       console.error('로그인 오류:', error);

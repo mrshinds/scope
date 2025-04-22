@@ -13,6 +13,11 @@ export default function AuthCallback() {
   useEffect(() => {
     const handleCallback = async () => {
       try {
+        // searchParams가 null이 아닌지 확인
+        if (!searchParams) {
+          throw new Error('URL 파라미터를 읽을 수 없습니다.');
+        }
+
         // URL에서 코드 파라미터 추출
         const code = searchParams.get('code');
         if (!code) {
@@ -25,14 +30,29 @@ export default function AuthCallback() {
           throw error;
         }
 
+        // 세션 검증
+        const { data: sessionData } = await supabase.auth.getSession();
+        if (!sessionData.session) {
+          throw new Error('세션 생성에 실패했습니다.');
+        }
+
+        console.log('인증 성공, 세션 생성됨:', sessionData.session.user.email);
+
         // 리디렉트 URL 설정
         const redirect = searchParams.get('redirect') || '/dashboard';
-        router.push(redirect);
-
-        // 성공 메시지 표시
+        
+        // 성공 메시지 표시 (리다이렉트 전에)
         toast.success('인증이 완료되었습니다', {
           description: '로그인에 성공했습니다.'
         });
+
+        // 페이지 리로드 방식으로 리다이렉트
+        console.log('인증 완료, 리다이렉트 경로:', redirect);
+        
+        // 약간의 지연 후 리다이렉트 (토스트 메시지가 보이도록)
+        setTimeout(() => {
+          window.location.href = redirect;
+        }, 500);
       } catch (error: any) {
         console.error('인증 콜백 처리 오류:', error);
         
@@ -42,8 +62,8 @@ export default function AuthCallback() {
           errorMessage = '인증 링크가 만료되었습니다. 새 링크를 요청해주세요.';
         }
 
-        // 로그인 페이지로 리디렉트
-        router.push(`/login?error=${encodeURIComponent(errorMessage)}`);
+        // 로그인 페이지로 리다이렉트
+        window.location.href = `/login?error=${encodeURIComponent(errorMessage)}`;
       }
     };
 
