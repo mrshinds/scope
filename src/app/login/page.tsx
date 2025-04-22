@@ -56,7 +56,11 @@ export default function Login() {
 
   // 이미 로그인되어 있는지 확인
   useEffect(() => {
+    let isRedirecting = false; // 리다이렉트 진행 중 플래그
+    
     const checkExistingSession = async () => {
+      if (isRedirecting) return; // 이미 리다이렉트 중이면 중복 실행 방지
+      
       try {
         const { data: { session }, error } = await supabase.auth.getSession();
         
@@ -68,15 +72,38 @@ export default function Login() {
         // 이미 로그인된 경우 대시보드로 이동
         if (session) {
           console.log('이미 로그인된 세션 발견:', session.user.email);
-          const redirect = searchParams?.get('redirect') || '/dashboard';
-          window.location.href = redirect;
+          
+          // 리다이렉트 진행 중 플래그 설정
+          isRedirecting = true;
+          
+          // 리다이렉트 경로 결정 (기본값은 대시보드)
+          let redirect = '/dashboard';
+          
+          // URL에서 redirect 파라미터가 있고 유효한 경우에만 사용
+          const redirectParam = searchParams?.get('redirect');
+          if (redirectParam && redirectParam.startsWith('/') && !redirectParam.includes('//')) {
+            redirect = redirectParam;
+          }
+          
+          console.log('리다이렉트 경로:', redirect);
+          
+          // 한 번만 리다이렉트하도록 setTimeout 사용
+          setTimeout(() => {
+            window.location.href = redirect;
+          }, 100);
         }
       } catch (error) {
         console.error('세션 검증 오류:', error);
       }
     };
     
+    // 초기 세션 확인 실행
     checkExistingSession();
+    
+    // 컴포넌트가 언마운트될 때 리다이렉트 플래그 초기화
+    return () => {
+      isRedirecting = false;
+    };
   }, [searchParams, supabase]);
 
   // OTP 코드 요청

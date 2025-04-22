@@ -44,7 +44,11 @@ export default function DashboardPage() {
   const [showLoginSuccess, setShowLoginSuccess] = useState(loginSuccess);
 
   useEffect(() => {
+    let isRedirecting = false; // 리다이렉트 진행 중 플래그
+    
     const checkSession = async () => {
+      if (isRedirecting) return; // 이미 리다이렉트 중이면 중복 실행 방지
+      
       try {
         // 1. 현재 세션 확인
         const { data: { session }, error } = await supabase.auth.getSession();
@@ -61,13 +65,28 @@ export default function DashboardPage() {
         }
         
         // 세션이 없는 경우 로그인 페이지로 리다이렉트
+        isRedirecting = true; // 리다이렉트 진행 중 플래그 설정
+        
         const redirectUrl = encodeURIComponent(pathname || '/dashboard');
         console.log('세션이 없음, 로그인 페이지로 리다이렉트');
-        window.location.href = `/login?redirect=${redirectUrl}`;
+        
+        // 한 번만 리다이렉트하도록 setTimeout 사용
+        setTimeout(() => {
+          window.location.href = `/login?redirect=${redirectUrl}`;
+        }, 100);
+        
         return;
       } catch (error: any) {
         console.error('세션 검증 오류:', error);
-        window.location.href = '/login';
+        
+        if (!isRedirecting) {
+          isRedirecting = true;
+          
+          setTimeout(() => {
+            window.location.href = '/login';
+          }, 100);
+        }
+        
         toast.error('세션 검증 중 오류가 발생했습니다');
       }
     };
@@ -84,7 +103,14 @@ export default function DashboardPage() {
         } else if (event === 'SIGNED_OUT') {
           // 로그아웃 시 로그인 페이지로 리다이렉트
           console.log('로그아웃 이벤트 감지');
-          window.location.href = '/login';
+          
+          if (!isRedirecting) {
+            isRedirecting = true;
+            
+            setTimeout(() => {
+              window.location.href = '/login';
+            }, 100);
+          }
         }
       }
     );
@@ -95,6 +121,7 @@ export default function DashboardPage() {
     // 리스너 정리
     return () => {
       authListener.subscription.unsubscribe();
+      isRedirecting = false; // 리다이렉트 플래그 초기화
     };
   }, [pathname, supabase]);
 
