@@ -46,7 +46,7 @@ export default function DashboardPage() {
   useEffect(() => {
     const checkSession = async () => {
       try {
-        // 1. 먼저 현재 세션 확인
+        // 1. 현재 세션 확인
         const { data: { session }, error } = await supabase.auth.getSession();
 
         if (error) {
