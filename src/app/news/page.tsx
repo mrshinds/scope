@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import axios from 'axios';
 import Image from 'next/image';
@@ -9,7 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { BookmarkIcon, Search, ExternalLink, Filter, RefreshCw } from 'lucide-react';
+import { BookmarkIcon, Search, ExternalLink, Filter, RefreshCw, Loader2 } from 'lucide-react';
 import { DashboardLayout } from '@/components/layout/dashboard-layout';
 import { NewsItem } from '@/lib/types';
 import { Separator } from '@/components/ui/separator';
@@ -136,8 +136,8 @@ function NewsItemCard({ item, onToggleScrap }: NewsItemCardProps) {
   );
 }
 
-// 언론보도 페이지 컴포넌트
-export default function NewsPage() {
+// 뉴스 페이지 콘텐츠 컴포넌트 - useSearchParams 사용
+function NewsPageContent() {
   const searchParams = useSearchParams();
   const [activeTab, setActiveTab] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
@@ -248,7 +248,7 @@ export default function NewsPage() {
     setFilterPublisher([]);
   };
 
-  // 언론사 필터 토글 함수
+  // 언론사 필터 토글
   const togglePublisherFilter = (publisher: string) => {
     setFilterPublisher(prev => 
       prev.includes(publisher)
@@ -257,175 +257,157 @@ export default function NewsPage() {
     );
   };
 
-  // 새로고침 함수
+  // 새로고침 처리
   const handleRefresh = () => {
+    setCurrentPage(1);
     fetchNewsData(1, true);
+  };
+
+  // 더 불러오기
+  const loadMore = () => {
+    setCurrentPage(prev => prev + 1);
+  };
+
+  // 검색 제출 처리
+  const handleSearchSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    // 검색 상태가 변경되면 useEffect에서 필터링이 자동으로 적용됨
   };
 
   return (
     <DashboardLayout>
-      <div className="container p-6 max-w-7xl mx-auto">
-        <div className="flex flex-col gap-6">
-          <div className="flex justify-between items-center">
-            <h1 className="text-2xl font-bold">언론보도</h1>
-            <div className="flex items-center gap-2">
-              <div className="relative w-60">
-                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                <Input
-                  placeholder="뉴스 검색..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="pl-8"
-                />
-              </div>
-              
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="outline" size="icon">
-                    <Filter className="h-4 w-4" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent className="w-56">
-                  <DropdownMenuLabel>언론사 필터</DropdownMenuLabel>
-                  <DropdownMenuSeparator />
-                  <div className="max-h-56 overflow-y-auto">
-                    {publishers.map((publisher) => (
-                      <DropdownMenuItem key={publisher} onSelect={(e) => {
-                        e.preventDefault();
-                        togglePublisherFilter(publisher);
-                      }}>
-                        <div className="flex items-center gap-2">
-                          <Checkbox 
-                            id={`publisher-${publisher}`}
-                            checked={filterPublisher.includes(publisher)}
-                            onCheckedChange={() => togglePublisherFilter(publisher)}
-                          />
-                          <label 
-                            htmlFor={`publisher-${publisher}`} 
-                            className="text-sm cursor-pointer flex-1"
-                          >
-                            {publisher}
-                          </label>
-                        </div>
-                      </DropdownMenuItem>
-                    ))}
-                  </div>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem onSelect={(e) => {
-                    e.preventDefault();
-                    resetFilters();
-                  }}>
-                    <Button variant="ghost" size="sm" className="w-full">
-                      필터 초기화
-                    </Button>
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-              
-              <Button variant="ghost" size="icon" onClick={handleRefresh}>
-                <RefreshCw className="h-4 w-4" />
+      <div className="flex justify-between items-center mb-6">
+        <h1 className="text-3xl font-bold">언론보도</h1>
+        <Button variant="outline" size="sm" onClick={handleRefresh}>
+          <RefreshCw className="h-4 w-4 mr-2" />
+          새로고침
+        </Button>
+      </div>
+
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full mb-6">
+        <TabsList className="grid w-full max-w-md grid-cols-3">
+          <TabsTrigger value="all">전체</TabsTrigger>
+          <TabsTrigger value="naver">네이버 뉴스</TabsTrigger>
+          <TabsTrigger value="google">구글 뉴스</TabsTrigger>
+        </TabsList>
+      </Tabs>
+
+      <div className="flex flex-col md:flex-row justify-between gap-4 mb-6">
+        <form onSubmit={handleSearchSubmit} className="w-full md:w-auto flex gap-2 md:flex-1">
+          <Input 
+            placeholder="뉴스 검색..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="md:max-w-md"
+          />
+          <Button type="submit">
+            <Search className="h-4 w-4 mr-2" />
+            검색
+          </Button>
+        </form>
+
+        <div className="flex justify-end gap-2">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline">
+                <Filter className="h-4 w-4 mr-2" />
+                필터
+                {filterPublisher.length > 0 && (
+                  <Badge variant="secondary" className="ml-2">{filterPublisher.length}</Badge>
+                )}
               </Button>
-            </div>
-          </div>
-
-          <Tabs defaultValue="all" value={activeTab} onValueChange={setActiveTab}>
-            <TabsList>
-              <TabsTrigger value="all">전체</TabsTrigger>
-              <TabsTrigger value="naver">네이버 뉴스</TabsTrigger>
-              <TabsTrigger value="google">구글 뉴스</TabsTrigger>
-            </TabsList>
-            
-            <div className="mt-4">
-              {filterPublisher.length > 0 && (
-                <div className="flex items-center gap-2 mb-4">
-                  <span className="text-sm text-muted-foreground">필터: </span>
-                  {filterPublisher.map((publisher) => (
-                    <Badge 
-                      key={publisher} 
-                      variant="outline"
-                      className="flex items-center gap-1"
-                    >
-                      {publisher}
-                      <button 
-                        onClick={() => togglePublisherFilter(publisher)}
-                        className="ml-1 text-xs hover:text-destructive"
-                      >
-                        ✕
-                      </button>
-                    </Badge>
-                  ))}
-                  <Button 
-                    variant="ghost" 
-                    size="sm" 
-                    onClick={resetFilters}
-                    className="text-xs h-auto py-1"
-                  >
-                    초기화
-                  </Button>
-                </div>
-              )}
-
-              {isLoading ? (
-                <div className="flex justify-center my-12">
-                  <div className="animate-pulse text-center">
-                    <p className="text-muted-foreground">뉴스를 불러오는 중...</p>
-                  </div>
-                </div>
-              ) : error ? (
-                <div className="text-center my-12">
-                  <p className="text-destructive">{error}</p>
-                  <Button 
-                    variant="outline" 
-                    className="mt-4"
-                    onClick={handleRefresh}
-                  >
-                    <RefreshCw className="h-4 w-4 mr-2" />
-                    새로고침
-                  </Button>
-                </div>
-              ) : (
-                <TabsContent value={activeTab} className="mt-0">
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-6">
-                    {filteredItems.length > 0 ? (
-                      filteredItems.map((item) => (
-                        <NewsItemCard 
-                          key={item.id} 
-                          item={item} 
-                          onToggleScrap={toggleScrap} 
+            </DropdownMenuTrigger>
+            <DropdownMenuContent className="w-64">
+              <DropdownMenuLabel>언론사 필터</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <div className="max-h-[300px] overflow-y-auto p-2">
+                {publishers.length > 0 ? (
+                  publishers.map((publisher) => (
+                    <DropdownMenuItem key={publisher} className="p-2">
+                      <div className="flex items-center space-x-2">
+                        <Checkbox 
+                          id={`publisher-${publisher}`}
+                          checked={filterPublisher.includes(publisher)}
+                          onCheckedChange={() => togglePublisherFilter(publisher)}
                         />
-                      ))
-                    ) : (
-                      <div className="col-span-full text-center my-12">
-                        <p className="text-muted-foreground">검색 결과가 없습니다.</p>
-                        <Button 
-                          variant="outline" 
-                          className="mt-4"
-                          onClick={handleRefresh}
+                        <label
+                          htmlFor={`publisher-${publisher}`}
+                          className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 flex-1 cursor-pointer"
                         >
-                          <RefreshCw className="h-4 w-4 mr-2" />
-                          새로고침
-                        </Button>
+                          {publisher}
+                        </label>
                       </div>
-                    )}
+                    </DropdownMenuItem>
+                  ))
+                ) : (
+                  <div className="p-2 text-center text-muted-foreground">
+                    언론사 목록이 없습니다
                   </div>
-                  
-                  {filteredItems.length > 0 && (
-                    <div className="flex justify-center mt-8">
-                      <Button 
-                        variant="outline"
-                        onClick={() => setCurrentPage(prev => prev + 1)}
-                        disabled={isLoading}
-                      >
-                        {isLoading ? '불러오는 중...' : '더 보기'}
-                      </Button>
-                    </div>
-                  )}
-                </TabsContent>
-              )}
-            </div>
-          </Tabs>
+                )}
+              </div>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={resetFilters} className="justify-center">
+                필터 초기화
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
+
+      {error && (
+        <div className="mb-6 p-4 bg-red-50 text-red-800 rounded-md">
+          {error}
+        </div>
+      )}
+
+      {filteredItems.length === 0 && !isLoading ? (
+        <div className="text-center p-8 bg-gray-50 rounded-lg">
+          <p className="text-muted-foreground">검색 결과가 없습니다</p>
+          <Button variant="outline" className="mt-4" onClick={resetFilters}>
+            필터 초기화
+          </Button>
+        </div>
+      ) : (
+        <>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
+            {filteredItems.map((item) => (
+              <NewsItemCard 
+                key={item.id} 
+                item={item} 
+                onToggleScrap={toggleScrap} 
+              />
+            ))}
+          </div>
+
+          {isLoading ? (
+            <div className="flex justify-center my-8">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
+            </div>
+          ) : (
+            filteredItems.length > 0 && (
+              <div className="flex justify-center mb-8">
+                <Button variant="outline" onClick={loadMore} disabled={isLoading}>
+                  더 불러오기
+                </Button>
+              </div>
+            )
+          )}
+        </>
+      )}
     </DashboardLayout>
+  );
+}
+
+// 메인 뉴스 페이지 컴포넌트
+export default function NewsPage() {
+  return (
+    <Suspense fallback={
+      <div className="flex justify-center items-center py-12">
+        <Loader2 className="h-6 w-6 animate-spin mr-2" />
+        <span>페이지를 불러오는 중...</span>
+      </div>
+    }>
+      <NewsPageContent />
+    </Suspense>
   );
 } 
