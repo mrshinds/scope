@@ -10,10 +10,11 @@ import { Label } from '@/components/ui/label'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Loader2 } from 'lucide-react'
 
-export default function SetPassword() {
+export default function ChangePassword() {
   const router = useRouter()
   const supabase = createClientComponentClient()
-  const [password, setPassword] = useState('')
+  const [currentPassword, setCurrentPassword] = useState('')
+  const [newPassword, setNewPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -31,13 +32,6 @@ export default function SetPassword() {
           return
         }
 
-        // 이미 비밀번호가 설정된 경우
-        const hasPassword = session.user.user_metadata?.password_set
-        if (hasPassword) {
-          router.push('/dashboard')
-          return
-        }
-
       } catch (error: any) {
         console.error('세션 확인 오류:', error)
         router.push('/login')
@@ -48,37 +42,46 @@ export default function SetPassword() {
     checkSession()
   }, [router, supabase])
 
-  // 비밀번호 설정
-  const handleSetPassword = async (e: React.FormEvent) => {
+  // 비밀번호 변경
+  const handleChangePassword = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
     setError(null)
 
     try {
       // 비밀번호 유효성 검사
-      if (password.length < 6) {
-        throw new Error('비밀번호는 6자 이상이어야 합니다')
+      if (newPassword.length < 6) {
+        throw new Error('새 비밀번호는 6자 이상이어야 합니다')
       }
 
-      if (password !== confirmPassword) {
-        throw new Error('비밀번호가 일치하지 않습니다')
+      if (newPassword !== confirmPassword) {
+        throw new Error('새 비밀번호가 일치하지 않습니다')
+      }
+
+      // 현재 비밀번호 확인
+      const { error: signInError } = await supabase.auth.signInWithPassword({
+        email: (await supabase.auth.getUser()).data.user?.email || '',
+        password: currentPassword
+      })
+
+      if (signInError) {
+        throw new Error('현재 비밀번호가 올바르지 않습니다')
       }
 
       // 비밀번호 업데이트
-      const { error } = await supabase.auth.updateUser({
-        password,
-        data: { password_set: true }
+      const { error: updateError } = await supabase.auth.updateUser({
+        password: newPassword
       })
 
-      if (error) throw error
+      if (updateError) throw updateError
 
-      toast.success('비밀번호가 설정되었습니다')
+      toast.success('비밀번호가 변경되었습니다')
       router.push('/dashboard')
 
     } catch (error: any) {
-      console.error('비밀번호 설정 오류:', error)
+      console.error('비밀번호 변경 오류:', error)
       setError(error.message)
-      toast.error('비밀번호 설정 실패', {
+      toast.error('비밀번호 변경 실패', {
         description: error.message
       })
     } finally {
@@ -90,9 +93,9 @@ export default function SetPassword() {
     <div className="flex min-h-screen items-center justify-center bg-gray-50">
       <div className="w-full max-w-md space-y-8 p-8 bg-white rounded-lg shadow">
         <div className="text-center">
-          <h1 className="text-2xl font-bold">비밀번호 설정</h1>
+          <h1 className="text-2xl font-bold">비밀번호 변경</h1>
           <p className="mt-2 text-gray-600">
-            계정 보안을 위해 비밀번호를 설정해주세요
+            계정 보안을 위해 비밀번호를 변경하세요
           </p>
         </div>
 
@@ -102,34 +105,46 @@ export default function SetPassword() {
           </Alert>
         )}
 
-        <form onSubmit={handleSetPassword} className="space-y-4">
+        <form onSubmit={handleChangePassword} className="space-y-4">
           <div>
-            <Label htmlFor="password">새 비밀번호</Label>
+            <Label htmlFor="currentPassword">현재 비밀번호</Label>
             <Input
-              id="password"
+              id="currentPassword"
               type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="6자 이상의 비밀번호"
+              value={currentPassword}
+              onChange={(e) => setCurrentPassword(e.target.value)}
+              placeholder="현재 비밀번호 입력"
               required
               disabled={loading}
             />
           </div>
           <div>
-            <Label htmlFor="confirmPassword">비밀번호 확인</Label>
+            <Label htmlFor="newPassword">새 비밀번호</Label>
+            <Input
+              id="newPassword"
+              type="password"
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
+              placeholder="6자 이상의 새 비밀번호"
+              required
+              disabled={loading}
+            />
+          </div>
+          <div>
+            <Label htmlFor="confirmPassword">새 비밀번호 확인</Label>
             <Input
               id="confirmPassword"
               type="password"
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}
-              placeholder="비밀번호를 다시 입력하세요"
+              placeholder="새 비밀번호를 다시 입력하세요"
               required
               disabled={loading}
             />
           </div>
           <Button type="submit" className="w-full" disabled={loading}>
             {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            비밀번호 설정
+            비밀번호 변경
           </Button>
         </form>
       </div>
