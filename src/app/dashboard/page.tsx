@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useSearchParams, useRouter } from 'next/navigation';
+import { useSearchParams, useRouter, usePathname } from 'next/navigation';
 import Link from 'next/link';
 import { 
   Card, 
@@ -23,12 +23,15 @@ import { ko } from 'date-fns/locale';
 import ArticleCard from '@/components/article-card';
 import { supabase } from '@/lib/supabase';
 import { DashboardLayout } from '@/components/layout/dashboard-layout';
+import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 
 export default function DashboardPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const tagFilter = searchParams ? searchParams.get('tag') : null;
   const loginSuccess = searchParams ? searchParams.get('login_success') === 'true' : false;
+  const pathname = usePathname();
+  const supabase = createClientComponentClient();
   
   const [articles, setArticles] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -39,32 +42,26 @@ export default function DashboardPage() {
   const [user, setUser] = useState<any>(null);
   const [showLoginSuccess, setShowLoginSuccess] = useState(loginSuccess);
 
-  // 인증 세션 확인
   useEffect(() => {
     const checkSession = async () => {
       try {
-        const { data: { session }, error } = await supabase.auth.getSession();
+        const { data: { session } } = await supabase.auth.getSession();
         
-        if (error) {
-          console.error('세션 확인 오류:', error);
-          return;
-        }
-
         if (!session) {
-          console.warn('인증된 세션이 없습니다. 로그인 페이지로 이동합니다.');
-          router.push('/login');
-          return;
+          console.log('세션 없음, 로그인 페이지로 리디렉션');
+          router.replace(`/login?redirect=${encodeURIComponent(pathname)}`);
+        } else {
+          console.log('세션 확인됨, 대시보드 페이지 유지');
+          setUser(session.user);
         }
-
-        setUser(session.user);
-        console.log('인증된 사용자:', session.user.email);
       } catch (error) {
-        console.error('세션 확인 중 오류 발생:', error);
+        console.error('세션 확인 오류:', error);
+        router.replace(`/login?error=session_check_failed&redirect=${encodeURIComponent(pathname)}`);
       }
     };
 
     checkSession();
-  }, [router]);
+  }, []);
 
   // 로그인 성공 메시지 표시 후 자동으로 숨김
   useEffect(() => {
