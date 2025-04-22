@@ -40,96 +40,8 @@ export default function DashboardPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [activeTab, setActiveTab] = useState('all');
   const [tags, setTags] = useState<string[]>([]);
-  const [user, setUser] = useState<any>(null);
+  const [user, setUser] = useState<any>({ email: 'demo@example.com' }); // 기본 사용자 정보 설정
   const [showLoginSuccess, setShowLoginSuccess] = useState(loginSuccess);
-
-  useEffect(() => {
-    // 이전 리다이렉트 기록이 있는지 확인
-    const redirectAttempts = sessionStorage.getItem('dashboardRedirectAttempts');
-    const attempts = redirectAttempts ? parseInt(redirectAttempts) : 0;
-    
-    // 리다이렉트 시도가 3회 이상이면 더 이상 리다이렉트하지 않음
-    if (attempts >= 3) {
-      console.log('대시보드: 리다이렉트 시도가 너무 많습니다. 무한 리다이렉트 방지를 위해 중단합니다.');
-      sessionStorage.removeItem('dashboardRedirectAttempts');
-      return;
-    }
-    
-    const checkSession = async () => {
-      try {
-        // 1. 현재 세션 확인
-        const { data: { session }, error } = await supabase.auth.getSession();
-
-        if (error) {
-          throw error;
-        }
-
-        if (session) {
-          // 세션이 있으면 대시보드 표시
-          console.log('대시보드: 세션 확인됨:', session.user.email);
-          setUser(session.user);
-          return; // 성공적으로 세션이 확인됨
-        }
-        
-        // 세션이 없는 경우 로그인 페이지로 리다이렉트
-        const redirectUrl = encodeURIComponent(pathname || '/dashboard');
-        console.log('대시보드: 세션이 없음, 로그인 페이지로 리다이렉트');
-        
-        // 리다이렉트 시도 횟수 증가
-        sessionStorage.setItem('dashboardRedirectAttempts', String(attempts + 1));
-        
-        // replace 메서드 사용하여 현재 페이지를 히스토리에서 대체
-        window.location.replace(`/login?redirect=${redirectUrl}`);
-        return;
-      } catch (error: any) {
-        console.error('세션 검증 오류:', error);
-        
-        // 리다이렉트 시도 횟수 증가
-        sessionStorage.setItem('dashboardRedirectAttempts', String(attempts + 1));
-        
-        // replace 메서드 사용하여 현재 페이지를 히스토리에서 대체
-        window.location.replace('/login');
-        
-        toast.error('세션 검증 중 오류가 발생했습니다');
-      }
-    };
-
-    // 2. 인증 상태 변경 이벤트 리스너 설정
-    const { data: authListener } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
-        console.log('대시보드 인증 상태 변경:', event);
-        
-        if (event === 'SIGNED_IN' && session) {
-          // 로그인 시 사용자 정보 업데이트
-          console.log('로그인 이벤트 감지:', session.user.email);
-          setUser(session.user);
-        } else if (event === 'SIGNED_OUT') {
-          // 로그아웃 시 로그인 페이지로 리다이렉트
-          console.log('로그아웃 이벤트 감지');
-          
-          // 리다이렉트 시도 횟수 증가
-          const currentAttempts = sessionStorage.getItem('dashboardRedirectAttempts');
-          const attemptsCount = currentAttempts ? parseInt(currentAttempts) : 0;
-          
-          if (attemptsCount < 3) {
-            sessionStorage.setItem('dashboardRedirectAttempts', String(attemptsCount + 1));
-            window.location.replace('/login');
-          }
-        }
-      }
-    );
-
-    // 짧은 지연 후에 세션 확인 실행
-    const timer = setTimeout(() => {
-      checkSession();
-    }, 300);
-
-    // 리스너 정리
-    return () => {
-      authListener.subscription.unsubscribe();
-      clearTimeout(timer);
-    };
-  }, [pathname, supabase]);
 
   // 로그인 성공 메시지 표시 후 자동으로 숨김
   useEffect(() => {
@@ -145,24 +57,10 @@ export default function DashboardPage() {
     }
   }, [showLoginSuccess]);
 
-  // 로그아웃 함수
+  // 로그아웃 함수 (기능 제거)
   const handleLogout = async () => {
-    try {
-      const { error } = await supabase.auth.signOut();
-      if (error) {
-        console.error('로그아웃 오류:', error);
-        toast.error('로그아웃 처리 중 오류가 발생했습니다.');
-        return;
-      }
-
-      // 로그아웃 성공 시 로그인 페이지로 이동
-      console.log('로그아웃 성공');
-      toast.success('로그아웃 되었습니다');
-      window.location.href = '/login';
-    } catch (error) {
-      console.error('로그아웃 처리 중 오류:', error);
-      toast.error('로그아웃 처리 중 오류가 발생했습니다.');
-    }
+    console.log('로그아웃 기능이 비활성화되었습니다.');
+    toast.info('로그아웃 기능이 비활성화되었습니다.');
   };
 
   // 테스트 데이터
