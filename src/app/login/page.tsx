@@ -56,11 +56,18 @@ export default function Login() {
 
   // 이미 로그인되어 있는지 확인
   useEffect(() => {
-    let isRedirecting = false; // 리다이렉트 진행 중 플래그
+    // 이전 리다이렉트 기록이 있는지 확인
+    const redirectAttempts = sessionStorage.getItem('loginRedirectAttempts');
+    const attempts = redirectAttempts ? parseInt(redirectAttempts) : 0;
+    
+    // 리다이렉트 시도가 3회 이상이면 더 이상 리다이렉트하지 않음
+    if (attempts >= 3) {
+      console.log('로그인 페이지: 리다이렉트 시도가 너무 많습니다. 무한 리다이렉트 방지를 위해 중단합니다.');
+      sessionStorage.removeItem('loginRedirectAttempts');
+      return;
+    }
     
     const checkExistingSession = async () => {
-      if (isRedirecting) return; // 이미 리다이렉트 중이면 중복 실행 방지
-      
       try {
         const { data: { session }, error } = await supabase.auth.getSession();
         
@@ -71,12 +78,9 @@ export default function Login() {
         
         // 이미 로그인된 경우 대시보드로 이동
         if (session) {
-          console.log('이미 로그인된 세션 발견:', session.user.email);
+          console.log('로그인 페이지: 이미 로그인된 세션 발견:', session.user.email);
           
-          // 리다이렉트 진행 중 플래그 설정
-          isRedirecting = true;
-          
-          // 리다이렉트 경로 결정 (기본값은 대시보드)
+          // 유효한 리다이렉트 경로 결정
           let redirect = '/dashboard';
           
           // URL에서 redirect 파라미터가 있고 유효한 경우에만 사용
@@ -85,24 +89,26 @@ export default function Login() {
             redirect = redirectParam;
           }
           
-          console.log('리다이렉트 경로:', redirect);
+          console.log('로그인 페이지: 리다이렉트 경로:', redirect);
           
-          // 한 번만 리다이렉트하도록 setTimeout 사용
-          setTimeout(() => {
-            window.location.href = redirect;
-          }, 100);
+          // 리다이렉트 시도 횟수 증가
+          sessionStorage.setItem('loginRedirectAttempts', String(attempts + 1));
+          
+          // replace 메서드 사용하여 현재 페이지를 히스토리에서 대체
+          window.location.replace(redirect);
         }
       } catch (error) {
         console.error('세션 검증 오류:', error);
       }
     };
     
-    // 초기 세션 확인 실행
-    checkExistingSession();
+    // 짧은 지연 후에 세션 확인 실행
+    const timer = setTimeout(() => {
+      checkExistingSession();
+    }, 300);
     
-    // 컴포넌트가 언마운트될 때 리다이렉트 플래그 초기화
     return () => {
-      isRedirecting = false;
+      clearTimeout(timer);
     };
   }, [searchParams, supabase]);
 

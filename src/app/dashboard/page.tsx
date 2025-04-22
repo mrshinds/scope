@@ -44,11 +44,18 @@ export default function DashboardPage() {
   const [showLoginSuccess, setShowLoginSuccess] = useState(loginSuccess);
 
   useEffect(() => {
-    let isRedirecting = false; // 리다이렉트 진행 중 플래그
+    // 이전 리다이렉트 기록이 있는지 확인
+    const redirectAttempts = sessionStorage.getItem('dashboardRedirectAttempts');
+    const attempts = redirectAttempts ? parseInt(redirectAttempts) : 0;
+    
+    // 리다이렉트 시도가 3회 이상이면 더 이상 리다이렉트하지 않음
+    if (attempts >= 3) {
+      console.log('대시보드: 리다이렉트 시도가 너무 많습니다. 무한 리다이렉트 방지를 위해 중단합니다.');
+      sessionStorage.removeItem('dashboardRedirectAttempts');
+      return;
+    }
     
     const checkSession = async () => {
-      if (isRedirecting) return; // 이미 리다이렉트 중이면 중복 실행 방지
-      
       try {
         // 1. 현재 세션 확인
         const { data: { session }, error } = await supabase.auth.getSession();
@@ -59,33 +66,29 @@ export default function DashboardPage() {
 
         if (session) {
           // 세션이 있으면 대시보드 표시
-          console.log('세션 확인됨:', session.user.email);
+          console.log('대시보드: 세션 확인됨:', session.user.email);
           setUser(session.user);
           return; // 성공적으로 세션이 확인됨
         }
         
         // 세션이 없는 경우 로그인 페이지로 리다이렉트
-        isRedirecting = true; // 리다이렉트 진행 중 플래그 설정
-        
         const redirectUrl = encodeURIComponent(pathname || '/dashboard');
-        console.log('세션이 없음, 로그인 페이지로 리다이렉트');
+        console.log('대시보드: 세션이 없음, 로그인 페이지로 리다이렉트');
         
-        // 한 번만 리다이렉트하도록 setTimeout 사용
-        setTimeout(() => {
-          window.location.href = `/login?redirect=${redirectUrl}`;
-        }, 100);
+        // 리다이렉트 시도 횟수 증가
+        sessionStorage.setItem('dashboardRedirectAttempts', String(attempts + 1));
         
+        // replace 메서드 사용하여 현재 페이지를 히스토리에서 대체
+        window.location.replace(`/login?redirect=${redirectUrl}`);
         return;
       } catch (error: any) {
         console.error('세션 검증 오류:', error);
         
-        if (!isRedirecting) {
-          isRedirecting = true;
-          
-          setTimeout(() => {
-            window.location.href = '/login';
-          }, 100);
-        }
+        // 리다이렉트 시도 횟수 증가
+        sessionStorage.setItem('dashboardRedirectAttempts', String(attempts + 1));
+        
+        // replace 메서드 사용하여 현재 페이지를 히스토리에서 대체
+        window.location.replace('/login');
         
         toast.error('세션 검증 중 오류가 발생했습니다');
       }
@@ -104,24 +107,27 @@ export default function DashboardPage() {
           // 로그아웃 시 로그인 페이지로 리다이렉트
           console.log('로그아웃 이벤트 감지');
           
-          if (!isRedirecting) {
-            isRedirecting = true;
-            
-            setTimeout(() => {
-              window.location.href = '/login';
-            }, 100);
+          // 리다이렉트 시도 횟수 증가
+          const currentAttempts = sessionStorage.getItem('dashboardRedirectAttempts');
+          const attemptsCount = currentAttempts ? parseInt(currentAttempts) : 0;
+          
+          if (attemptsCount < 3) {
+            sessionStorage.setItem('dashboardRedirectAttempts', String(attemptsCount + 1));
+            window.location.replace('/login');
           }
         }
       }
     );
 
-    // 초기 세션 확인 실행
-    checkSession();
+    // 짧은 지연 후에 세션 확인 실행
+    const timer = setTimeout(() => {
+      checkSession();
+    }, 300);
 
     // 리스너 정리
     return () => {
       authListener.subscription.unsubscribe();
-      isRedirecting = false; // 리다이렉트 플래그 초기화
+      clearTimeout(timer);
     };
   }, [pathname, supabase]);
 
